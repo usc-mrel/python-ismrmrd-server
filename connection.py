@@ -20,6 +20,8 @@ class Connection:
         self.savedataGroup  = savedataGroup
         self.socket         = socket
         self.is_exhausted   = False
+        self.logged_sendraw = False
+        self.logged_recvraw = False
         self.handlers       = {
             constants.MRD_MESSAGE_CONFIG_FILE:         self.read_config_file,
             constants.MRD_MESSAGE_CONFIG_TEXT:         self.read_config_text,
@@ -204,12 +206,24 @@ class Connection:
     #   Trajectory       (  variable, float         )
     #   Raw k-space data (  variable, float         )
     def send_acquisition(self, acquisition):
-        logging.info("--> Sending MRD_MESSAGE_ISMRMRD_ACQUISITION (1008)")
+        if (logging.root.getEffectiveLevel() is logging.INFO):
+            if (self.logged_sendraw is False):
+                logging.info("--> Sending MRD_MESSAGE_ISMRMRD_ACQUISITION (1008) (no further logging of this type)")
+                self.logged_sendraw = True
+        else:
+            logging.debug("--> Sending MRD_MESSAGE_ISMRMRD_ACQUISITION (1008)")
+
         self.socket.send(constants.MrdMessageIdentifier.pack(constants.MRD_MESSAGE_ISMRMRD_ACQUISITION))
         acquisition.serialize_into(self.socket.send)
 
     def read_acquisition(self):
-        logging.info("<-- Received MRD_MESSAGE_ISMRMRD_ACQUISITION (1008)")
+        if (logging.root.getEffectiveLevel() is logging.INFO):
+            if (self.logged_recvraw is False):
+                logging.info("<-- Received MRD_MESSAGE_ISMRMRD_ACQUISITION (1008) (no further logging of this type)")
+                self.logged_recvraw = True
+        else:
+            logging.debug("--> Received MRD_MESSAGE_ISMRMRD_ACQUISITION (1008)")
+
         acq = ismrmrd.Acquisition.deserialize_from(self.read)
 
         if (self.savedata is True):
