@@ -11,7 +11,24 @@ debugFolder = "/tmp/share/debug"
 
 def process(connection, config, metadata):
     logging.info("Config: \n%s", config)
-    logging.info("Metadata: \n%s", metadata)
+
+    # Metadata should be MRD formatted header, but may be a string
+    # if it failed conversion earlier
+    try:
+        logging.info("Metadata: \n%s", metadata.toxml('utf-8'))
+
+        logging.info("Incoming dataset contains %d encodings", len(metadata.encoding))
+        logging.info("First encoding is of type '%s', with a field of view of (%s x %s x %s)mm^3 and a matrix size of (%s x %s x %s)", 
+            metadata.encoding[0].trajectory, 
+            metadata.encoding[0].encodedSpace.matrixSize.x, 
+            metadata.encoding[0].encodedSpace.matrixSize.y, 
+            metadata.encoding[0].encodedSpace.matrixSize.z, 
+            metadata.encoding[0].encodedSpace.fieldOfView_mm.x, 
+            metadata.encoding[0].encodedSpace.fieldOfView_mm.y, 
+            metadata.encoding[0].encodedSpace.fieldOfView_mm.z)
+
+    except:
+        logging.info("Improperly formatted metadata: \n%s", metadata)
 
     for group in process_data(connection):
         if isinstance(group[0], ismrmrd.Image):

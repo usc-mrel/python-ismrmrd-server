@@ -5,6 +5,7 @@ from connection import Connection
 import socket
 import logging
 import multiprocessing
+import ismrmrd.xsd
 
 import simplefft
 import invertcontrast
@@ -54,7 +55,15 @@ class Server:
                 return
 
             # Second messages is the metadata (text)
-            metadata = next(connection)
+            metadata_xml = next(connection)
+            logging.debug("XML Metadata: %s", metadata_xml)
+            try:
+                metadata = ismrmrd.xsd.CreateFromDocument(metadata_xml)
+                if (metadata.acquisitionSystemInformation.systemFieldStrength_T != None):
+                    logging.info("Data is from a %s %s at %1.1fT", metadata.acquisitionSystemInformation.systemVendor, metadata.acquisitionSystemInformation.systemModel, metadata.acquisitionSystemInformation.systemFieldStrength_T)
+            except:
+                logging.warning("Metadata is not a valid MRD XML structure.  Passing on metadata as text")
+                metadata = metadata_xml
 
             # Decide what program to use based on config
             # As a shortcut, we accept the file name as text too.
