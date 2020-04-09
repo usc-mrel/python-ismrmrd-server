@@ -138,6 +138,7 @@ def main(args):
         dset = ismrmrd.Dataset(args.filename, args.in_group, False)
 
         xml_header = dset.read_xml_header()
+        xml_header = xml_header.decode("utf-8")
         connection.send_metadata(xml_header)
 
         logging.info("Found %d raw data readouts", dset.number_of_acquisitions())
@@ -171,7 +172,9 @@ def main(args):
 
             for imgNum in range(0, dset.number_of_images(group)):
                 image = dset.read_image(group, imgNum)
-                image.attribute_string = image.attribute_string.decode('utf-8')
+
+                if not isinstance(image.attribute_string, str):
+                    image.attribute_string = image.attribute_string.decode('utf-8')
 
                 logging.debug("Sending image %d of %d", imgNum, dset.number_of_images(group)-1)
                 connection.send_image(image)
