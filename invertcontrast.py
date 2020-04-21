@@ -64,9 +64,9 @@ def process(connection, config, metadata):
                 # When this criteria is met, run process_group() on the accumulated
                 # data, which returns images that are sent back to the client.
                 # TODO: logic for grouping images
-                if True:
+                if False:
                     logging.info("Processing a group of images")
-                    image = process_image(imgGroup[0], config, metadata)
+                    image = process_image(imgGroup, config, metadata)
                     logging.debug("Sending image to client:\n%s", image)
                     connection.send_image(image)
                     imgGroup = []
@@ -90,7 +90,7 @@ def process(connection, config, metadata):
 
         if len(imgGroup) > 0:
             logging.info("Processing a group of images (untriggered)")
-            image = process_image(imgGroup[0], config, metadata)
+            image = process_image(imgGroup, config, metadata)
             logging.debug("Sending image to client:\n%s", image)
             connection.send_image(image)
             imgGroup = []
@@ -139,12 +139,6 @@ def process_raw(group, config, metadata):
     data = np.around(data)
     data = data.astype(np.int16)
 
-    # Invert image contrast
-    data = 32767-data
-    data = np.abs(data)
-    data = data.astype(np.int16)
-    np.save(debugFolder + "/" + "imgInverted.npy", data)
-
     # Remove phase oversampling
     nRO = np.size(data,0)
     data = data[int(nRO/4):int(nRO*3/4),:]
@@ -165,19 +159,25 @@ def process_raw(group, config, metadata):
     logging.debug("Image data has %d elements", image.data.size)
 
     image.attribute_string = xml
+
+    # Call process_image() to invert image contrast
+    image = process_image([image], config, metadata)
+
     return image
 
 
-def process_image(image, config, metadata):
+def process_image(images, config, metadata):
     # Create folder, if necessary
     if not os.path.exists(debugFolder):
         os.makedirs(debugFolder)
         logging.debug("Created folder " + debugFolder + " for debug output files")
 
-    logging.debug("Incoming image data of type %s", ismrmrd.get_dtype_from_data_type(image.data_type))
+    logging.debug("Incoming image data of type %s", ismrmrd.get_dtype_from_data_type(images[0].data_type))
 
-    # Extract image data itself
-    data = image.data
+    # Extract image data into a 5D array of size [img cha z y x]
+    data = np.stack([img.data for img in images])
+    head = [img.getHead() for img in images]
+
     logging.debug("Original image data is size %s" % (data.shape,))
     np.save(debugFolder + "/" + "imgOrig.npy", data)
 
@@ -193,26 +193,27 @@ def process_image(image, config, metadata):
     data = data.astype(np.int16)
     np.save(debugFolder + "/" + "imgInverted.npy", data)
 
-    # Create new MRD instance for the inverted image
-    imageInverted = ismrmrd.Image.from_array(data.transpose())
-    data_type = imageInverted.data_type
+    # Re-slice back into 2D images
+    imagesOut = [None] * data.shape[0]
+    for iImg in range(data.shape[0]):
+        # Create new MRD instance for the inverted image
+        imagesOut[iImg] = ismrmrd.Image.from_array(data[iImg,...].transpose())
+        data_type = imagesOut[iImg].data_type
 
-    np.save(debugFolder + "/" + "imgInvertedMrd.npy", imageInverted.data)
+        # Copy the fixed header information
+        oldHeader = head[iImg]
+        oldHeader.data_type = data_type
+        imagesOut[iImg].setHead(oldHeader)
 
-    # Copy the fixed header information
-    oldHeader = image.getHead()
-    oldHeader.data_type = data_type
-    imageInverted.setHead(oldHeader)
+        # Set ISMRMRD Meta Attributes
+        meta = ismrmrd.Meta({'DataRole':               'Image',
+                            'ImageProcessingHistory': ['FIRE', 'PYTHON'],
+                            'WindowCenter':           '16384',
+                            'WindowWidth':            '32768'})
+        xml = meta.serialize()
+        logging.debug("Image MetaAttributes: %s", xml)
+        logging.debug("Image data has %d elements", imagesOut[iImg].data.size)
 
-    # Set ISMRMRD Meta Attributes
-    meta = ismrmrd.Meta({'DataRole':               'Image',
-                         'ImageProcessingHistory': ['FIRE', 'PYTHON'],
-                         'WindowCenter':           '16384',
-                         'WindowWidth':            '32768'})
-    xml = meta.serialize()
-    logging.debug("Image MetaAttributes: %s", xml)
-    logging.debug("Image data has %d elements", image.data.size)
+        imagesOut[iImg].attribute_string = xml
 
-    imageInverted.attribute_string = xml
-
-    return imageInverted
+    return imagesOut    return imagesOut

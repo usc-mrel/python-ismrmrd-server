@@ -240,10 +240,14 @@ class Connection:
     #   Attribute length (   8 bytes, uint_64       )
     #   Attribute data   (  variable, char          )
     #   Image data       (  variable, variable      )
-    def send_image(self, image):
-        logging.info("--> Sending MRD_MESSAGE_ISMRMRD_IMAGE (1022)")
-        self.socket.send(constants.MrdMessageIdentifier.pack(constants.MRD_MESSAGE_ISMRMRD_IMAGE))
-        image.serialize_into(self.socket.send)
+    def send_image(self, images):
+        if not isinstance(images, list):
+            images = [images]
+
+        logging.info("--> Sending MRD_MESSAGE_ISMRMRD_IMAGE (1022) (%d images)", len(images))
+        for image in images:
+            self.socket.send(constants.MrdMessageIdentifier.pack(constants.MRD_MESSAGE_ISMRMRD_IMAGE))
+            image.serialize_into(self.socket.send)
 
         # Explicit version of serialize_into() for more verbose debugging
         # self.socket.send(image.getHead())
