@@ -30,44 +30,73 @@ def process(connection, config, metadata):
     except:
         logging.info("Improperly formatted metadata: \n%s", metadata)
 
-    for group in process_data(connection):
-        if isinstance(group[0], ismrmrd.Image):
-            logging.info("Processing an image")
-            image = process_image(group[0], config, metadata)
-        else:
-            logging.info("Processing a group of k-space data")
-            image = process_raw(group, config, metadata)
-
-        logging.debug("Sending image to client:\n%s", image)
-        connection.send_image(image)
-
-
-# Continuously parse incoming data parsed from MRD messages
-def process_data(iterable):
-    group = []
+    # Continuously parse incoming data parsed from MRD messages
+    acqGroup = []
+    imgGroup = []
     try:
-        for item in iterable:
-            if item is None:
-                break
+        for item in connection:
+            # ----------------------------------------------------------
+            # Raw k-space data messages
+            # ----------------------------------------------------------
+            if isinstance(item, ismrmrd.Acquisition):
+                # Accumulate all imaging readouts in a group
+                if (not item.is_flag_set(ismrmrd.ACQ_IS_NOISE_MEASUREMENT) and
+                    not item.is_flag_set(ismrmrd.ACQ_IS_PHASECORR_DATA)):
+                    acqGroup.append(item)
 
-            elif isinstance(item, ismrmrd.Acquisition):
-                if (not item.is_flag_set(ismrmrd.ACQ_IS_PHASECORR_DATA)):
-                    group.append(item)
+                # When this criteria is met, run process_raw() on the accumulated
+                # data, which returns images that are sent back to the client.
+                if item.is_flag_set(ismrmrd.ACQ_LAST_IN_SLICE):
+                    logging.info("Processing a group of k-space data")
+                    image = process_raw(acqGroup, config, metadata)
+                    logging.debug("Sending image to client:\n%s", image)
+                    connection.send_image(image)
+                    acqGroup = []
 
-                if (item.is_flag_set(ismrmrd.ACQ_LAST_IN_SLICE)):
-                    yield group
-                    group = []
-
+            # ----------------------------------------------------------
+            # Image data messages
+            # ----------------------------------------------------------
             elif isinstance(item, ismrmrd.Image):
-                group.append(item)
-                yield group
-                group = []
+                # TODO: example for which images to keep/discard
+                if True:
+                    imgGroup.append(item)
+
+                # When this criteria is met, run process_group() on the accumulated
+                # data, which returns images that are sent back to the client.
+                # TODO: logic for grouping images
+                if True:
+                    logging.info("Processing a group of images")
+                    image = process_image(imgGroup[0], config, metadata)
+                    logging.debug("Sending image to client:\n%s", image)
+                    connection.send_image(image)
+                    imgGroup = []
+
+            elif item is None:
+                break
 
             else:
                 logging.error("Unsupported data type %s", type(item).__name__)
 
+        # Process any remaining groups of raw or image data.  This can 
+        # happen if the trigger condition for these groups are not met.
+        # This is also a fallback for handling image data, as the last
+        # image in a series is typically not separately flagged.
+        if len(acqGroup) > 0:
+            logging.info("Processing a group of k-space data (untriggered)")
+            image = process_raw(acqGroup, config, metadata)
+            logging.debug("Sending image to client:\n%s", image)
+            connection.send_image(image)
+            acqGroup = []
+
+        if len(imgGroup) > 0:
+            logging.info("Processing a group of images (untriggered)")
+            image = process_image(imgGroup[0], config, metadata)
+            logging.debug("Sending image to client:\n%s", image)
+            connection.send_image(image)
+            imgGroup = []
+
     finally:
-        iterable.send_close()
+        connection.send_close()
 
 
 def process_raw(group, config, metadata):
