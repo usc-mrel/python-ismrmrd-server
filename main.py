@@ -27,7 +27,7 @@ if __name__ == '__main__':
     parser.add_argument('-v', '--verbose',        action='store_true', help='Verbose output.')
     parser.add_argument('-l', '--logfile',        type=str,            help='Path to log file')
     parser.add_argument('-s', '--savedata',       action='store_true', help='Save incoming data')
-    parser.add_argument('-S', '--savedataFolder', action='store_true', help='Folder to save incoming data')
+    parser.add_argument('-S', '--savedataFolder', type=str,            help='Folder to save incoming data')
 
     parser.set_defaults(**defaults)
 

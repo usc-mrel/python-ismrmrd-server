@@ -39,6 +39,11 @@ def connection_receive_loop(sock, outfile, outgroup):
         sock.close()
         logging.info("Socket closed")
 
+        # Dataset may not be closed properly if a close message is not received
+        try:
+            incoming_connection.dset.close()
+        except:
+            pass
 
 def main(args):
     # ----- Load and validate file ---------------------------------------------
@@ -97,6 +102,9 @@ def main(args):
         # print(" ", "\n  ".join(imageNames))
 
         for imageName in imageNames:
+            if ((imageName == 'xml') or (imageName == 'config')):
+                continue
+
             image = group[imageName]
             if not (('data' in image) and ('header' in image) and ('attributes' in image)):
                 isImage = False
@@ -160,13 +168,15 @@ def main(args):
         groups = dset.list()
         if ('xml' in groups):
             xml_header = dset.read_xml_header()
+            xml_header = xml_header.decode("utf-8")
         else:
             xml_header = "Dummy XML header"
         connection.send_metadata(xml_header)
 
         for group in groups:
-            if ( (group is 'config') or (group is 'xml') ):
+            if ( (group == 'config') or (group == 'xml') ):
                 logging.info("Skipping group %s", group)
+                continue
 
             logging.info("Reading images from '/" + args.in_group + "/" + group + "'")
 

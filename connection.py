@@ -18,6 +18,7 @@ class Connection:
         self.savedataFile   = savedataFile
         self.savedataFolder = savedataFolder
         self.savedataGroup  = savedataGroup
+        self.dset           = None
         self.socket         = socket
         self.is_exhausted   = False
         self.logged_sendraw = False
@@ -114,7 +115,7 @@ class Connection:
 
     # ----- MRD_MESSAGE_CONFIG_TEXT (2) --------------------------------------
     # This message contains the configuration information (text contents) used 
-    # for image reconstruction/post-processing.
+    # for image reconstruction/post-processing.  Text is null-terminated.
     # Message consists of:
     #   ID               (   2 bytes, unsigned short)
     #   Length           (   4 bytes, uint32_t      )
@@ -139,8 +140,8 @@ class Connection:
         return config
 
     # ----- MRD_MESSAGE_METADATA_XML_TEXT (3) -----------------------------------
-    # This message contains the metadata for the entire dataset,  formatted as
-    # MRD XML flexible data header text.
+    # This message contains the metadata for the entire dataset, formatted as
+    # MRD XML flexible data header text.  Text is null-terminated.
     # Message consists of:
     #   ID               (   2 bytes, unsigned short)
     #   Length           (   4 bytes, uint32_t      )
@@ -180,19 +181,19 @@ class Connection:
         return
 
     # ----- MRD_MESSAGE_TEXT (5) -----------------------------------
-    # This message contains the arbitrary text data.
+    # This message contains arbitrary text data.
     # Message consists of:
     #   ID               (   2 bytes, unsigned short)
     #   Length           (   4 bytes, uint32_t      )
     #   Text data        (  variable, char          )
     def send_text(self, contents):
-        logging.info("--> Sending MRD_MESSAGE_TEXT (3)")
+        logging.info("--> Sending MRD_MESSAGE_TEXT (5)")
         self.socket.send(constants.MrdMessageIdentifier.pack(constants.MRD_MESSAGE_TEXT))
         self.socket.send(constants.MrdMessageLength.pack(len(contents)+1)) # Add null terminator
         self.socket.send('%s\0' % contents)                                # Add null terminator
 
     def read_text(self):
-        logging.info("<-- Received MRD_MESSAGE_TEXT (3)")
+        logging.info("<-- Received MRD_MESSAGE_TEXT (5)")
         length = self.read_mrd_message_length()
         text = self.read(length)
         text = text.decode("utf-8").split('\x00',1)[0]  # Strip off null teminator
@@ -232,7 +233,7 @@ class Connection:
         return acq
 
     # ----- MRD_MESSAGE_ISMRMRD_IMAGE (1022) -----------------------------------
-    # This message contains raw k-space data from a single readout.
+    # This message contains a single [x y z cha] image.
     # Message consists of:
     #   ID               (   2 bytes, unsigned short)
     #   Fixed header     ( 198 bytes, mixed         )
@@ -263,7 +264,7 @@ class Connection:
         logging.debug("   Reading in %d bytes of attributes", attribute_length.value)
 
         attribute_bytes = self.read(attribute_length.value)
-        logging.debug("   Attributes: %s", attribute_bytes)
+        logging.debug("   Attributes: %s", attribute_bytes.decode('utf-8'))
 
         image = ismrmrd.Image(header_bytes, attribute_bytes.decode('utf-8'))
 
