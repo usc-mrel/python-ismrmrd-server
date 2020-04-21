@@ -196,6 +196,13 @@ def main(args):
     # Wait for incoming data and cleanup
     logging.debug("Waiting for threads to finish")
     process.join()
+
+    # Save a copy of the MRD XML header now that the connection thread is finished with the file
+    logging.debug("Writing MRD metadata to file")
+    dset = ismrmrd.Dataset(args.outfile, args.out_group)
+    dset.write_xml_header(bytes(xml_header, 'utf-8'))
+    dset.close()
+
     logging.info("Session complete")
 
     return
