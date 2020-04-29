@@ -203,6 +203,7 @@ def process_image(images, config, metadata):
         # Copy the fixed header information
         oldHeader = head[iImg]
         oldHeader.data_type = data_type
+
         imagesOut[iImg].setHead(oldHeader)
 
         # Set ISMRMRD Meta Attributes
@@ -216,4 +217,4 @@ def process_image(images, config, metadata):
 
         imagesOut[iImg].attribute_string = xml
 
-    return imagesOut    return imagesOut
+    return imagesOut
