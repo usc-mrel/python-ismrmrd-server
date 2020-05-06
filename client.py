@@ -102,7 +102,7 @@ def main(args):
         # print(" ", "\n  ".join(imageNames))
 
         for imageName in imageNames:
-            if ((imageName == 'xml') or (imageName == 'config')):
+            if ((imageName == 'xml') or (imageName == 'config') or (imageName == 'config_file')):
                 continue
 
             image = group[imageName]
@@ -174,7 +174,7 @@ def main(args):
         connection.send_metadata(xml_header)
 
         for group in groups:
-            if ( (group == 'config') or (group == 'xml') ):
+            if ( (group == 'config') or (group == 'config_file') or (group == 'xml') ):
                 logging.info("Skipping group %s", group)
                 continue
 
