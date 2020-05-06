@@ -57,9 +57,12 @@ def process(connection, config, metadata):
             # Image data messages
             # ----------------------------------------------------------
             elif isinstance(item, ismrmrd.Image):
-                # TODO: example for which images to keep/discard
-                if True:
+                # Only process magnitude images -- send phase images back without modification
+                if item.image_type is ismrmrd.IMTYPE_MAGNITUDE:
                     imgGroup.append(item)
+                else:
+                    connection.send_image(item)
+                    continue
 
                 # When this criteria is met, run process_group() on the accumulated
                 # data, which returns images that are sent back to the client.
