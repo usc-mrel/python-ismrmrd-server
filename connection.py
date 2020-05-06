@@ -106,6 +106,14 @@ class Connection:
         config_file = constants.MrdMessageConfigurationFile.unpack(config_file_bytes)[0].decode("utf-8")
         config_file = config_file.split('\x00',1)[0]  # Strip off null terminators in fixed 1024 size
 
+        if (config_file == "savedataonly"):
+            logging.info("Save data, but no processing based on config")
+            if self.savedata is True:
+                logging.debug("Saving data is already enabled")
+            else:
+                self.savedata = True
+                self.create_save_file()
+
         if (self.savedata is True):
             self.dset._file.require_group("dataset")
             dsetConfigFile = self.dset._dataset.require_dataset('config_file',shape=(1,), dtype=h5py.special_dtype(vlen=bytes))
@@ -160,6 +168,7 @@ class Connection:
         metadata = metadata.decode("utf-8").split('\x00',1)[0]  # Strip off null teminator
 
         if (self.savedata is True):
+            logging.debug("    Saving XML header to file")
             self.dset.write_xml_header(bytes(metadata, 'utf-8'))
 
         return metadata

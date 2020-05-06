@@ -82,13 +82,6 @@ class Server:
                 finally:
                     connection.send_close()
             elif (config == "savedataonly"):
-                logging.info("Save data, but no processing based on config")
-                if connection.savedata is True:
-                    logging.debug("Saving data is already enabled")
-                else:
-                    connection.savedata = True
-                    connection.create_save_file()
-
                 # Dummy loop with no processing
                 try:
                     for msg in connection:
