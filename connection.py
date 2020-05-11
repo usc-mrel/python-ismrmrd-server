@@ -281,7 +281,7 @@ class Connection:
 
         image = ismrmrd.Image(header_bytes, attribute_bytes.decode('utf-8'))
 
-        logging.debug("    Image is size %d x %d x %d of type %s", image.matrix_size[0], image.matrix_size[1], image.matrix_size[2], ismrmrd.get_dtype_from_data_type(image.data_type))
+        logging.debug("    Image is size %d x %d x %d with %d channels of type %s", image.matrix_size[0], image.matrix_size[1], image.matrix_size[2], image.channels, ismrmrd.get_dtype_from_data_type(image.data_type))
         def calculate_number_of_entries(nchannels, xs, ys, zs):
             return nchannels * xs * ys * zs
 
