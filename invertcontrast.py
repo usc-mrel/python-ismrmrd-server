@@ -33,6 +33,7 @@ def process(connection, config, metadata):
     # Continuously parse incoming data parsed from MRD messages
     acqGroup = []
     imgGroup = []
+    waveformGroup = []
     try:
         for item in connection:
             # ----------------------------------------------------------
@@ -74,11 +75,25 @@ def process(connection, config, metadata):
                     connection.send_image(image)
                     imgGroup = []
 
+            # ----------------------------------------------------------
+            # Waveform data messages
+            # ----------------------------------------------------------
+            elif isinstance(item, ismrmrd.Waveform):
+                waveformGroup.append(item)
+
             elif item is None:
                 break
 
             else:
                 logging.error("Unsupported data type %s", type(item).__name__)
+
+        # Extract raw ECG waveform data. Basic sorting to make sure that data 
+        # is time-ordered, but no additional checking for missing data.
+        # ecgData has shape (5 x timepoints)
+        if len(waveformGroup) > 0:
+            waveformGroup.sort(key = lambda item: item.time_stamp)
+            ecgData = [item.data for item in waveformGroup if item.waveform_id == 0]
+            ecgData = np.concatenate(ecgData,1)
 
         # Process any remaining groups of raw or image data.  This can 
         # happen if the trigger condition for these groups are not met.

@@ -92,6 +92,7 @@ def main(args):
     #   /group/image_0/attributes  text of image MetaAttributes
     isRaw   = False
     isImage = False
+    hasWaveforms = False
 
     if ( ('data' in group) and ('xml' in group) ):
         isRaw = True
@@ -108,6 +109,9 @@ def main(args):
             image = group[imageName]
             if not (('data' in image) and ('header' in image) and ('attributes' in image)):
                 isImage = False
+
+    if ('waveforms' in group):
+        hasWaveforms = True
 
     dset.close()
 
@@ -129,6 +133,7 @@ def main(args):
     # writing to the HDF5 file as multi-threading issues can occur
     connection = Connection(sock, False)
 
+    # --------------- Send config -----------------------------
     if (args.config_local):
         fid = open(args.config_local, "r")
         config_text = fid.read()
@@ -140,15 +145,34 @@ def main(args):
         logging.info("Sending remote config file name '%s'", args.config)
         connection.send_config_file(args.config)
 
+    dset = ismrmrd.Dataset(args.filename, args.in_group, False)
+
+    # --------------- Send MRD metadata -----------------------
+    groups = dset.list()
+    if ('xml' in groups):
+        xml_header = dset.read_xml_header()
+        xml_header = xml_header.decode("utf-8")
+    else:
+        logging.warning("Could not find MRD metadata xml in file")
+        xml_header = "Dummy XML header"
+    connection.send_metadata(xml_header)
+
+    # --------------- Send waveform data ----------------------
+    # TODO: Interleave waveform and other data so they arrive chronologically
+    if hasWaveforms:
+        logging.info("Sending waveform data")
+        logging.info("Found %d waveforms", dset.number_of_waveforms())
+
+        for idx in range(0, dset.number_of_waveforms()):
+            wav = dset.read_waveform(idx)
+            try:
+                connection.send_waveform(wav)
+            except:
+                logging.error('Failed to send waveform %d' % idx)
+
     # --------------- Send raw data ----------------------
     if isRaw:
         logging.info("Starting raw data session")
-        dset = ismrmrd.Dataset(args.filename, args.in_group, False)
-
-        xml_header = dset.read_xml_header()
-        xml_header = xml_header.decode("utf-8")
-        connection.send_metadata(xml_header)
-
         logging.info("Found %d raw data readouts", dset.number_of_acquisitions())
 
         for idx in range(dset.number_of_acquisitions()):
@@ -158,21 +182,9 @@ def main(args):
             except:
                 logging.error('Failed to send acquisition %d' % idx)
 
-        dset.close()
-
     # --------------- Send image data ----------------------
     else:
         logging.info("Starting image data session")
-        dset = ismrmrd.Dataset(args.filename, args.in_group, False)
-
-        groups = dset.list()
-        if ('xml' in groups):
-            xml_header = dset.read_xml_header()
-            xml_header = xml_header.decode("utf-8")
-        else:
-            xml_header = "Dummy XML header"
-        connection.send_metadata(xml_header)
-
         for group in groups:
             if ( (group == 'config') or (group == 'config_file') or (group == 'xml') ):
                 logging.info("Skipping group %s", group)
@@ -189,8 +201,7 @@ def main(args):
                 logging.debug("Sending image %d of %d", imgNum, dset.number_of_images(group)-1)
                 connection.send_image(image)
 
-        dset.close()
-
+    dset.close()
     connection.send_close()
 
     # Wait for incoming data and cleanup
