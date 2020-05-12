@@ -5,6 +5,7 @@ import itertools
 import logging
 import numpy as np
 import numpy.fft as fft
+import base64
 
 # Folder for debug output files
 debugFolder = "/tmp/share/debug"
@@ -191,6 +192,14 @@ def process_image(images, config, metadata):
         logging.debug("Created folder " + debugFolder + " for debug output files")
 
     logging.debug("Incoming image data of type %s", ismrmrd.get_dtype_from_data_type(images[0].data_type))
+
+    # Display MetaAttributes for first image
+    meta = ismrmrd.Meta.deserialize(images[0].attribute_string)
+    logging.debug("MetaAttributes: %s", ismrmrd.Meta.serialize(meta))
+
+    # Optional serialization of ICE MiniHeader
+    if 'IceMiniHead' in meta:
+        logging.debug("IceMiniHead: %s", base64.b64decode(meta['IceMiniHead']).decode('utf-8'))
 
     # Extract image data into a 5D array of size [img cha z y x]
     data = np.stack([img.data for img in images])
