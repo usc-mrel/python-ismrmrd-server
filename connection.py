@@ -183,7 +183,7 @@ class Connection:
         logging.info("<-- Received MRD_MESSAGE_CLOSE (4)")
 
         if (self.savedata is True):
-            logging.debug("Closing file")
+            logging.debug("Closing file %s", self.dset._file.filename)
             self.dset.close()
 
         self.is_exhausted = True

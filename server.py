@@ -9,6 +9,7 @@ import ismrmrd.xsd
 
 import simplefft
 import invertcontrast
+import analyzeflow
 
 class Server:
     """
@@ -73,6 +74,9 @@ class Server:
             elif (config == "invertcontrast"):
                 logging.info("Starting invertcontrast processing based on config")
                 invertcontrast.process(connection, config, metadata)
+            elif (config == "analyzeflow"):
+                logging.info("Starting analyzeflow processing based on config")
+                analyzeflow.process(connection, config, metadata)
             elif (config == "null"):
                 logging.info("No processing based on config")
                 try:
