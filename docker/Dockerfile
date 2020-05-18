@@ -1,4 +1,4 @@
-FROM python:3.7.1-alpine3.7
+FROM python:3.8.2-alpine3.11
 LABEL maintainer="Kelvin Chow (kelvin.chow@siemens.com)"
 
 
