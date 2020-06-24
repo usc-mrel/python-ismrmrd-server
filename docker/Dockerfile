@@ -2,7 +2,8 @@ FROM python:3.8.2-alpine3.11
 LABEL maintainer="Kelvin Chow (kelvin.chow@siemens.com)"
 
 
-RUN     apk --no-cache add hdf5 hdf5-dev --repository http://dl-cdn.alpinelinux.org/alpine/edge/testing/ \
+# Dependencies for Python MRD server
+RUN     apk --no-cache add hdf5 hdf5-dev --repository http://dl-cdn.alpinelinux.org/alpine/edge/community/ \
      && apk --no-cache add bash git openssh gcc libc-dev \
      && pip install --no-cache-dir pyxb h5py
 
