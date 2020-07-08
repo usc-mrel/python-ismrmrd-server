@@ -16,11 +16,15 @@ class Server:
     Something something docstring.
     """
 
-    def __init__(self, address, port, savedata, savedataFolder):
+    def __init__(self, address, port, savedata, savedataFolder, multiprocessing):
         logging.info("Starting server and listening for data at %s:%d", address, port)
         if (savedata is True):
             logging.debug("Saving incoming data is enabled.")
 
+        if (multiprocessing is True):
+            logging.debug("Multiprocessing is enabled.")
+
+        self.multiprocessing = multiprocessing
         self.savedata = savedata
         self.savedataFolder = savedataFolder
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -36,11 +40,13 @@ class Server:
 
             logging.info("Accepting connection from: %s:%d", remote_addr, remote_port)
 
-            process = multiprocessing.Process(target=self.handle, args=[sock])
-            process.daemon = True
-            process.start()
-
-            logging.debug("Spawned process %d to handle connection.", process.pid)
+            if (self.multiprocessing is True):
+                process = multiprocessing.Process(target=self.handle, args=[sock])
+                process.daemon = True
+                process.start()
+                logging.debug("Spawned process %d to handle connection.", process.pid)
+            else:
+                self.handle(sock)
 
     def handle(self, sock):
 
