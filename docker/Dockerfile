@@ -18,7 +18,7 @@ RUN cd /opt/code && \
 # siemens_to_ismrmrd converter
 RUN cd /opt/code && \
     git clone https://github.com/ismrmrd/siemens_to_ismrmrd.git
-RUN sed -i 's/set(Boost_NO_BOOST_CMAKE ON)/#set(Boost_NO_BOOST_CMAKE ON)/' /opt/code/siemens_to_ismrmrd/CMakeLists.txt
+
 RUN cd /opt/code/siemens_to_ismrmrd && \
     mkdir build && \
     cd build && \
