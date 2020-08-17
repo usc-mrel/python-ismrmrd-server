@@ -116,3 +116,10 @@ class Server:
             sock.close()
             logging.info("Socket closed")
 
+            # Dataset may not be closed properly if a close message is not received
+            if connection.savedata is True:
+                try:
+                    connection.dset.close()
+                except:
+                    pass
+            logging.info("Incoming data was saved at %s", connection.mrdFilePath)

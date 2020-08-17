@@ -62,7 +62,7 @@ def main(args):
     print(" ", "\n  ".join(dsetNames))
 
     if not args.in_group:
-        if len(dset.keys()) is 1:
+        if len(dset.keys()) == 1:
             args.in_group = list(dset.keys())[0]
         else:
             logging.error("Input group not specified and multiple groups are present")
