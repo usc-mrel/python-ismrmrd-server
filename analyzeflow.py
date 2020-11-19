@@ -17,7 +17,9 @@ def process(connection, config, metadata):
     # Metadata should be MRD formatted header, but may be a string
     # if it failed conversion earlier
     try:
-        logging.info("Metadata: \n%s", metadata.toxml('utf-8'))
+        # Disabled due to incompatibility between PyXB and Python 3.8:
+        # https://github.com/pabigot/pyxb/issues/123
+        # # logging.info("Metadata: \n%s", metadata.toxml('utf-8'))
 
         logging.info("Incoming dataset contains %d encodings", len(metadata.encoding))
         logging.info("First encoding is of type '%s', with a field of view of (%s x %s x %s)mm^3 and a matrix size of (%s x %s x %s)", 
@@ -104,7 +106,7 @@ def process_image(images, config, metadata):
         os.makedirs(debugFolder)
         logging.debug("Created folder " + debugFolder + " for debug output files")
 
-    logging.debug("Incoming image data of type %s", ismrmrd.get_dtype_from_data_type(images[0].data_type))
+    logging.debug("Processing data with %d images of type %s", len(images), ismrmrd.get_dtype_from_data_type(images[0].data_type))
 
     # Display MetaAttributes for first image
     tmpMeta = ismrmrd.Meta.deserialize(images[0].attribute_string)

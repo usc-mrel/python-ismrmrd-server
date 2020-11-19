@@ -122,4 +122,4 @@ class Server:
                     connection.dset.close()
                 except:
                     pass
-            logging.info("Incoming data was saved at %s", connection.mrdFilePath)
+                logging.info("Incoming data was saved at %s", connection.mrdFilePath)

@@ -282,7 +282,7 @@ class Connection:
 
         image = ismrmrd.Image(header_bytes, attribute_bytes.decode('utf-8'))
 
-        logging.debug("    Image is size %d x %d x %d with %d channels of type %s", image.matrix_size[0], image.matrix_size[1], image.matrix_size[2], image.channels, ismrmrd.get_dtype_from_data_type(image.data_type))
+        logging.info("    Image is size %d x %d x %d with %d channels of type %s", image.matrix_size[0], image.matrix_size[1], image.matrix_size[2], image.channels, ismrmrd.get_dtype_from_data_type(image.data_type))
         def calculate_number_of_entries(nchannels, xs, ys, zs):
             return nchannels * xs * ys * zs
 
@@ -295,6 +295,7 @@ class Connection:
         image.data.ravel()[:] = np.frombuffer(data_bytes, dtype=ismrmrd.get_dtype_from_data_type(image.data_type))
 
         if (self.savedata is True):
+            image.attribute_string = ismrmrd.Meta.deserialize(image.attribute_string.split('\x00',1)[0]).serialize()  # Strip off null teminator
             self.dset.append_image("images_%d" % image.image_series_index, image)
 
         return image
@@ -306,7 +307,7 @@ class Connection:
     #   Fixed header     ( 240 bytes, mixed         )
     #   Waveform data    (  variable, uint32_t      )
     def send_waveform(self, waveform):
-        logging.info("--> Sending MRD_MESSAGE_ISMRMRD_WAVEFORM (1026)")
+        # logging.info("--> Sending MRD_MESSAGE_ISMRMRD_WAVEFORM (1026)")
         self.socket.send(constants.MrdMessageIdentifier.pack(constants.MRD_MESSAGE_ISMRMRD_WAVEFORM))
         waveform.serialize_into(self.socket.send)
 
