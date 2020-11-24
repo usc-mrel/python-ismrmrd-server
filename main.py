@@ -5,6 +5,7 @@ from server import Server
 import argparse
 import logging
 import sys
+import os
 
 defaults = {
     'host':           '0.0.0.0',
@@ -36,6 +37,10 @@ if __name__ == '__main__':
 
     if args.logfile:
         print("Logging to file: ", args.logfile)
+
+        if not os.path.exists(os.path.dirname(args.logfile)):
+            os.makedirs(os.path.dirname(args.logfile))
+
         logging.basicConfig(filename=args.logfile, format='%(asctime)s - %(message)s', level=logging.WARNING)
         logging.getLogger().addHandler(logging.StreamHandler(sys.stdout))
     else:
