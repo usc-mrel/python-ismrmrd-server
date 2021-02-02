@@ -7,6 +7,7 @@ import numpy as np
 import numpy.fft as fft
 import base64
 import re
+import mrdhelper
 
 # Folder for debug output files
 debugFolder = "/tmp/share/debug"
