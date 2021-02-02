@@ -16,11 +16,12 @@ import time
 import os
 
 defaults = {
-    'address':   'localhost',
-    'port':      9002, 
-    'outfile':   'out.h5',
-    'out_group': str(datetime.datetime.now()),
-    'config':    'default.xml'
+    'address':        'localhost',
+    'port':           9002, 
+    'outfile':        'out.h5',
+    'out_group':      str(datetime.datetime.now()),
+    'config':         'default.xml',
+    'send_waveforms': False
 }
 
 # Wait for incoming data and cleanup
@@ -160,15 +161,18 @@ def main(args):
     # --------------- Send waveform data ----------------------
     # TODO: Interleave waveform and other data so they arrive chronologically
     if hasWaveforms:
-        logging.info("Sending waveform data")
-        logging.info("Found %d waveforms", dset.number_of_waveforms())
+        if args.send_waveforms:
+            logging.info("Sending waveform data")
+            logging.info("Found %d waveforms", dset.number_of_waveforms())
 
-        for idx in range(0, dset.number_of_waveforms()):
-            wav = dset.read_waveform(idx)
-            try:
-                connection.send_waveform(wav)
-            except:
-                logging.error('Failed to send waveform %d' % idx)
+            for idx in range(0, dset.number_of_waveforms()):
+                wav = dset.read_waveform(idx)
+                try:
+                    connection.send_waveform(wav)
+                except:
+                    logging.error('Failed to send waveform %d' % idx)
+        else:
+            logging.info("Waveform data present, but send-waveforms option turned off")
 
     # --------------- Send raw data ----------------------
     if isRaw:
@@ -222,16 +226,17 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description='Example client for MRD streaming format',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument('filename',                             help='Input file')
-    parser.add_argument('-a', '--address',                      help='Address (hostname) of MRD server')
-    parser.add_argument('-p', '--port',              type=int,  help='Port')
-    parser.add_argument('-o', '--outfile',                      help='Output file')
-    parser.add_argument('-g', '--in-group',                     help='Input data group')
-    parser.add_argument('-G', '--out-group',                    help='Output group name')
-    parser.add_argument('-c', '--config',                       help='Remote configuration file')
-    parser.add_argument('-C', '--config-local',                 help='Local configuration file')
-    parser.add_argument('-v', '--verbose', action='store_true', help='Verbose mode')
-    parser.add_argument('-l', '--logfile',           type=str,  help='Path to log file')
+    parser.add_argument('filename',                                    help='Input file')
+    parser.add_argument('-a', '--address',                             help='Address (hostname) of MRD server')
+    parser.add_argument('-p', '--port',           type=int,            help='Port')
+    parser.add_argument('-o', '--outfile',                             help='Output file')
+    parser.add_argument('-g', '--in-group',                            help='Input data group')
+    parser.add_argument('-G', '--out-group',                           help='Output group name')
+    parser.add_argument('-c', '--config',                              help='Remote configuration file')
+    parser.add_argument('-C', '--config-local',                        help='Local configuration file')
+    parser.add_argument('-w', '--send-waveforms', action='store_true', help='Send waveform (physio) data')
+    parser.add_argument('-v', '--verbose',        action='store_true', help='Verbose mode')
+    parser.add_argument('-l', '--logfile',                  type=str,  help='Path to log file')
 
     parser.set_defaults(**defaults)
 
