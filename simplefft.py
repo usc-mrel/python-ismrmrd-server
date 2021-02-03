@@ -5,6 +5,8 @@ import itertools
 import logging
 import numpy as np
 import numpy.fft as fft
+import ctypes
+import mrdhelper
 from datetime import datetime
 
 # Folder for debug output files
@@ -91,11 +93,24 @@ def process_group(group, config, metadata):
     image = ismrmrd.Image.from_array(data, acquisition=group[0])
     image.image_index = 1
 
+    # Set field of view
+    image.field_of_view = (ctypes.c_float(metadata.encoding[0].reconSpace.fieldOfView_mm.x), 
+                            ctypes.c_float(metadata.encoding[0].reconSpace.fieldOfView_mm.y), 
+                            ctypes.c_float(metadata.encoding[0].reconSpace.fieldOfView_mm.z))
+
     # Set ISMRMRD Meta Attributes
     meta = ismrmrd.Meta({'DataRole':               'Image',
                          'ImageProcessingHistory': ['FIRE', 'PYTHON'],
                          'WindowCenter':           '16384',
                          'WindowWidth':            '32768'})
+
+    # Add image orientation directions to MetaAttributes if not already present
+    if meta.get('ImageRowDir') is None:
+        meta['ImageRowDir'] = ["{:.18f}".format(image.getHead().read_dir[0]), "{:.18f}".format(image.getHead().read_dir[1]), "{:.18f}".format(image.getHead().read_dir[2])]
+
+    if meta.get('ImageColumnDir') is None:
+        meta['ImageColumnDir'] = ["{:.18f}".format(image.getHead().phase_dir[0]), "{:.18f}".format(image.getHead().phase_dir[1]), "{:.18f}".format(image.getHead().phase_dir[2])]
+
     xml = meta.serialize()
     logging.debug("Image MetaAttributes: %s", xml)
     logging.debug("Image data has %d elements", image.data.size)
