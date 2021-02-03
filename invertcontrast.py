@@ -37,6 +37,7 @@ def process(connection, config, metadata):
         logging.info("Improperly formatted metadata: \n%s", metadata)
 
     # Continuously parse incoming data parsed from MRD messages
+    currentSeries = 0
     acqGroup = []
     imgGroup = []
     waveformGroup = []
@@ -64,8 +65,8 @@ def process(connection, config, metadata):
             # Image data messages
             # ----------------------------------------------------------
             elif isinstance(item, ismrmrd.Image):
-                # Only process magnitude images -- send phase images back without modification
-                if item.image_type is ismrmrd.IMTYPE_MAGNITUDE:
+                # Only process magnitude images -- send phase images back without modification (fallback for images with unknown type)
+                if (item.image_type is ismrmrd.IMTYPE_MAGNITUDE) or (item.image_type == 0):
                     imgGroup.append(item)
                 else:
                     tmpMeta = ismrmrd.Meta.deserialize(item.attribute_string)
@@ -77,9 +78,10 @@ def process(connection, config, metadata):
 
                 # When this criteria is met, run process_group() on the accumulated
                 # data, which returns images that are sent back to the client.
-                # TODO: logic for grouping images
-                if False:
-                    logging.info("Processing a group of images")
+                # e.g. when the series number changes:
+                if item.image_series_index != currentSeries:
+                    logging.info("Processing a group of images because series index changed to %d", item.image_series_index)
+                    currentSeries = item.image_series_index
                     image = process_image(imgGroup, config, metadata)
                     connection.send_image(image)
                     imgGroup = []
@@ -288,8 +290,10 @@ def process_image(images, config, metadata):
         oldHeader = head[iImg]
         oldHeader.data_type = data_type
 
+        # Unused example, as images are grouped by series before being passed into this function now
+        # oldHeader.image_series_index = currentSeries
+
         # Increment series number when flag detected (i.e. follow ICE logic for splitting series)
-        oldHeader.image_series_index = currentSeries
         if mrdhelper.get_meta_value(meta[iImg], 'IceMiniHead') is not None:
             if mrdhelper.extract_minihead_bool_param(base64.b64decode(meta[iImg]['IceMiniHead']).decode('utf-8'), 'BIsSeriesEnd') is True:
                 currentSeries += 1
@@ -303,6 +307,9 @@ def process_image(images, config, metadata):
         tmpMeta['WindowCenter']           = '16384'
         tmpMeta['WindowWidth']            = '32768'
         tmpMeta['Keep_image_geometry']    = 1
+
+        # Example for setting colormap
+        # tmpMeta['LUTFileName']            = 'MicroDeltaHotMetal.pal'
 
         # Add image orientation directions to MetaAttributes if not already present
         if tmpMeta.get('ImageRowDir') is None:
