@@ -6,6 +6,7 @@ import socket
 import logging
 import multiprocessing
 import ismrmrd.xsd
+import importlib
 
 import simplefft
 import invertcontrast
@@ -73,7 +74,7 @@ class Server:
                 metadata = metadata_xml
 
             # Decide what program to use based on config
-            # As a shortcut, we accept the file name as text too.
+            # If not one of these explicit cases, try to load file matching name of config
             if (config == "simplefft"):
                 logging.info("Starting simplefft processing based on config")
                 simplefft.process(connection, config, metadata)
@@ -100,8 +101,14 @@ class Server:
                 finally:
                     connection.send_close()
             else:
-                logging.info("Unknown config '%s'.  Falling back to 'invertcontrast'", config)
-                invertcontrast.process(connection, config, metadata)
+                try:
+                    # Load module from file having exact name as config
+                    module = importlib.import_module(config)
+                    logging.info("Starting config %s", config)
+                    module.process(connection, config, metadata)
+                except ImportError:
+                    logging.info("Unknown config '%s'.  Falling back to 'invertcontrast'", config)
+                    invertcontrast.process(connection, config, metadata)
 
         except Exception as e:
             logging.exception(e)
