@@ -304,6 +304,13 @@ def process_image(images, config, metadata):
         tmpMeta['WindowWidth']            = '32768'
         tmpMeta['Keep_image_geometry']    = 1
 
+        # Add image orientation directions to MetaAttributes if not already present
+        if tmpMeta.get('ImageRowDir') is None:
+            tmpMeta['ImageRowDir'] = ["{:.18f}".format(oldHeader.read_dir[0]), "{:.18f}".format(oldHeader.read_dir[1]), "{:.18f}".format(oldHeader.read_dir[2])]
+
+        if tmpMeta.get('ImageColumnDir') is None:
+            tmpMeta['ImageColumnDir'] = ["{:.18f}".format(oldHeader.phase_dir[0]), "{:.18f}".format(oldHeader.phase_dir[1]), "{:.18f}".format(oldHeader.phase_dir[2])]
+
         xml = tmpMeta.serialize()
         logging.debug("Image MetaAttributes: %s", xml)
         logging.debug("Image data has %d elements", imagesOut[iImg].data.size)
