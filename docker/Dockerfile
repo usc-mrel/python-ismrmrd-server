@@ -53,8 +53,14 @@ RUN  cd /opt/code \
      && cd /opt/code/ismrmrd-python-tools \
      && python3 setup.py install
 
+# Use this if building from Github repo
 RUN  cd /opt/code \
      && git clone https://github.com/kspaceKelvin/python-ismrmrd-server.git
+
+# # If doing local development, use this section of code to copy local code into Docker container.
+# # From the folder containing the python-ismrmrd-server repo, uncomment the COPY line below and run the command:
+# #    docker build -f python-ismrmrd-server/docker/Dockerfile .
+# COPY python-ismrmrd-server  /opt/code/python-ismrmrd-server
 
 # Cleanup files not required after compiling
 RUN  apk del gcc git
