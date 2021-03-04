@@ -38,7 +38,7 @@ RUN     apk --no-cache add hdf5 --repository http://dl-cdn.alpinelinux.org/alpin
 
 # Dependencies for Python MRD server
 RUN     apk --no-cache add hdf5 hdf5-dev --repository http://dl-cdn.alpinelinux.org/alpine/edge/community/ \
-     && apk --no-cache add bash git openssh gcc libc-dev \
+     && apk --no-cache add bash git openssh gcc libc-dev libxslt-dev libxml2-dev \
      && pip install --no-cache-dir pyxb h5py
 
 RUN  mkdir -p /opt/code
