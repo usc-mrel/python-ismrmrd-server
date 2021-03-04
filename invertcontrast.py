@@ -5,6 +5,7 @@ import itertools
 import logging
 import numpy as np
 import numpy.fft as fft
+import xml.dom.minidom
 import base64
 import ctypes
 import re
@@ -306,6 +307,7 @@ def process_image(images, config, metadata):
         tmpMeta['ImageProcessingHistory'] = ['FIRE', 'PYTHON']
         tmpMeta['WindowCenter']           = '16384'
         tmpMeta['WindowWidth']            = '32768'
+        tmpMeta['SequenceDescriptionAdditional']  = 'FIRE'
         tmpMeta['Keep_image_geometry']    = 1
 
         # Example for setting colormap
@@ -318,10 +320,10 @@ def process_image(images, config, metadata):
         if tmpMeta.get('ImageColumnDir') is None:
             tmpMeta['ImageColumnDir'] = ["{:.18f}".format(oldHeader.phase_dir[0]), "{:.18f}".format(oldHeader.phase_dir[1]), "{:.18f}".format(oldHeader.phase_dir[2])]
 
-        xml = tmpMeta.serialize()
-        logging.debug("Image MetaAttributes: %s", xml)
+        metaXml = tmpMeta.serialize()
+        logging.debug("Image MetaAttributes: %s", xml.dom.minidom.parseString(metaXml).toprettyxml())
         logging.debug("Image data has %d elements", imagesOut[iImg].data.size)
 
-        imagesOut[iImg].attribute_string = xml
+        imagesOut[iImg].attribute_string = metaXml
 
     return imagesOut
