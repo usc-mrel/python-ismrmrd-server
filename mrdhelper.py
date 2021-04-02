@@ -3,6 +3,8 @@ import ismrmrd
 import re
 
 def update_img_header_from_raw(imgHead, rawHead):
+    """Populate ImageHeader fields from AcquisitionHeader"""
+
     if rawHead is None:
         return imgHead
 
@@ -14,11 +16,13 @@ def update_img_header_from_raw(imgHead, rawHead):
     # # during image creation by from_array
     # imgHead.data_type            = 
     # imgHead.matrix_size          = 
+    # imgHead.channels             = 
+
+    # # This is mandatory, but must be filled in from the XML header, 
+    # # not from the acquisition header
     # imgHead.field_of_view        = 
 
     imgHead.image_type             = ismrmrd.IMTYPE_MAGNITUDE
-
-    imgHead.channels               = 1
     imgHead.position               = rawHead.position
     imgHead.read_dir               = rawHead.read_dir
     imgHead.phase_dir              = rawHead.phase_dir
@@ -46,14 +50,14 @@ def update_img_header_from_raw(imgHead, rawHead):
     return imgHead
 
 def get_meta_value(meta, key):
-    # Get a value from MRD Meta Attributes (blank if key not found)
+    """Get a value from MRD Meta Attributes (blank if key not found)"""
     if key in meta.keys():
         return meta[key]
     else:
         return None
 
 def extract_minihead_bool_param(miniHead, name):
-    # Extract a bool parameter from the serialized text of the ICE MiniHeader
+    """Extract a bool parameter from the serialized text of the ICE MiniHeader"""
     # Note: if missing, return false (following ICE logic)
     expr = r'(?<=<ParamBool."' + name + r'">{)\s*[^}]*\s*'
     res = re.search(expr, miniHead)
@@ -67,7 +71,7 @@ def extract_minihead_bool_param(miniHead, name):
             return False
 
 def extract_minihead_long_param(miniHead, name):
-    # Extract a long parameter from the serialized text of the ICE MiniHeader
+    """Extract a long parameter from the serialized text of the ICE MiniHeader"""
     expr = r'(?<=<ParamLong."' + name + r'">{)\s*\d*\s*'
     res = re.search(expr, miniHead)
 
@@ -79,7 +83,7 @@ def extract_minihead_long_param(miniHead, name):
         return int(res.group(0))
 
 def extract_minihead_double_param(miniHead, name):
-    # Extract a double parameter from the serialized text of the ICE MiniHeader
+    """Extract a double parameter from the serialized text of the ICE MiniHeader"""
     expr = r'(?<=<ParamDouble."' + name + r'">{)\s*[^}]*\s*'
     res = re.search(expr, miniHead)
 
@@ -91,7 +95,7 @@ def extract_minihead_double_param(miniHead, name):
         return float(res.group(0))
 
 def extract_minihead_string_param(miniHead, name):
-    # Extract a string parameter from the serialized text of the ICE MiniHeader
+    """Extract a string parameter from the serialized text of the ICE MiniHeader"""
     expr = r'(?<=<ParamString."' + name + r'">{)\s*[^}]*\s*'
     res = re.search(expr, miniHead)
 
