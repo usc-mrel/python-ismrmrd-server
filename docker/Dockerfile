@@ -1,8 +1,9 @@
-FROM python:3.8.2-alpine3.11 AS mrd_converter
+# ----- First stage to build ismrmrd and siemens_to_ismrmrd -----
+FROM python:3.9-slim AS mrd_converter
+ARG  DEBIAN_FRONTEND=noninteractive
+ENV  TZ=America/Chicago
 
-RUN     apk --no-cache add hdf5 hdf5-dev --repository http://dl-cdn.alpinelinux.org/alpine/edge/community/ \
-     && apk --no-cache add cmake build-base boost-dev boost-static libxml2-dev libxslt-dev git fftw-dev
-
+RUN  apt-get update && apt-get install -y git cmake g++ libhdf5-dev libxml2-dev libxslt1-dev libboost-all-dev libfftw3-dev
 RUN  mkdir -p /opt/code
 
 # ISMRMRD library
@@ -17,53 +18,48 @@ RUN cd /opt/code && \
 
 # siemens_to_ismrmrd converter
 RUN cd /opt/code && \
-    git clone https://github.com/ismrmrd/siemens_to_ismrmrd.git
-
-RUN cd /opt/code/siemens_to_ismrmrd && \
+    git clone https://github.com/ismrmrd/siemens_to_ismrmrd.git && \
+    cd siemens_to_ismrmrd && \
     mkdir build && \
     cd build && \
     cmake ../ && \
     make -j $(nproc) && \
     make install
 
+# Create archive of ISMRMRD libraries (including symlinks) for second stage
+RUN cd /usr/local/lib && tar -czvf libismrmrd.tar.gz libismrmrd*
+
 # ----- Start another clean build without all of the build dependencies of siemens_to_ismrmrd -----
-FROM python:3.8.2-alpine3.11
-LABEL maintainer="Kelvin Chow (kelvin.chow@siemens.com)"
+FROM python:3.9-slim
+LABEL maintainer="Kelvin Chow (kelvin.chow@siemens-healthineers.com)"
 
-# Copy siemens_to_ismrmrd from last stage and re-add necessary dependencies
-COPY --from=mrd_converter /usr/local/bin/siemens_to_ismrmrd /usr/local/bin/siemens_to_ismrmrd
-COPY --from=mrd_converter /usr/local/lib/libismrmrd*        /usr/local/lib/
-RUN     apk --no-cache add hdf5 --repository http://dl-cdn.alpinelinux.org/alpine/edge/community/ \
-     && apk --no-cache add libxslt
+# Copy ISMRMRD files from last stage
+COPY --from=mrd_converter /usr/local/include/ismrmrd        /usr/local/include/ismrmrd/
+COPY --from=mrd_converter /usr/local/share/ismrmrd          /usr/local/share/ismrmrd/
+COPY --from=mrd_converter /usr/local/bin/ismrmrd*           /usr/local/bin/
+COPY --from=mrd_converter /usr/local/lib/libismrmrd.tar.gz  /usr/local/lib/
+RUN cd /usr/local/lib && tar -zxvf libismrmrd.tar.gz && rm libismrmrd.tar.gz && ldconfig
 
-# Dependencies for Python MRD server
-RUN     apk --no-cache add hdf5 hdf5-dev --repository http://dl-cdn.alpinelinux.org/alpine/edge/community/ \
-     && apk --no-cache add bash git openssh gcc libc-dev libxslt-dev libxml2-dev \
-     && pip install --no-cache-dir pyxb h5py
+# Copy siemens_to_ismrmrd from last stage
+COPY --from=mrd_converter /usr/local/bin/siemens_to_ismrmrd  /usr/local/bin/siemens_to_ismrmrd
 
-RUN  mkdir -p /opt/code
+RUN apt-get update && apt-get install -y git
+RUN mkdir -p /opt/code
 
 RUN  cd /opt/code \
      && git clone https://github.com/ismrmrd/ismrmrd-python.git \
      && cd /opt/code/ismrmrd-python \
-     && python3 setup.py install
+     && pip3 install --no-cache-dir .
 
 RUN  cd /opt/code \
      && git clone https://github.com/ismrmrd/ismrmrd-python-tools.git \
      && cd /opt/code/ismrmrd-python-tools \
-     && python3 setup.py install
+     && pip3 install --no-cache-dir .
 
-# Use this if building from Github repo
 RUN  cd /opt/code \
      && git clone https://github.com/kspaceKelvin/python-ismrmrd-server.git
 
-# # If doing local development, use this section of code to copy local code into Docker container.
-# # From the folder containing the python-ismrmrd-server repo, uncomment the COPY line below and run the command:
-# #    docker build -f python-ismrmrd-server/docker/Dockerfile .
-# COPY python-ismrmrd-server  /opt/code/python-ismrmrd-server
-
-# Cleanup files not required after compiling
-RUN  apk del gcc git
+# Cleanup files not required after installation
 RUN  rm -r /root/.cache/pip
 
-CMD [ "/usr/local/bin/python3", "/opt/code/python-ismrmrd-server/main.py", "-v", "-H=0.0.0.0", "-p=9002", "-l=/tmp/python-ismrmrd-server.log"]
+CMD [ "python3", "/opt/code/python-ismrmrd-server/main.py", "-v", "-H=0.0.0.0", "-p=9002", "-l=/tmp/python-ismrmrd-server.log"]
