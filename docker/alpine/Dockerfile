@@ -63,7 +63,7 @@ RUN  cd /opt/code \
 # image. From the folder containing the python-ismrmrd-server repo, uncomment
 # the COPY line below and run the command:
 #    docker build -t fire-python-custom -f python-ismrmrd-server/docker/Dockerfile ./
-# COPY python-ismrmrd-server  /opt/code/python-ismrmrd-server
+COPY python-ismrmrd-server  /opt/code/python-ismrmrd-server
 
 # Cleanup files not required after compiling
 RUN  apk del gcc git
