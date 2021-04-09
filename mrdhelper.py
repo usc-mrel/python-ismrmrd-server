@@ -8,10 +8,6 @@ def update_img_header_from_raw(imgHead, rawHead):
     if rawHead is None:
         return imgHead
 
-    imgHead.version                = rawHead.version
-    imgHead.flags                  = rawHead.flags
-    imgHead.measurement_uid        = rawHead.measurement_uid
-
     # # These fields are not translated from the raw header, but filled in
     # # during image creation by from_array
     # imgHead.data_type            = 
@@ -22,7 +18,10 @@ def update_img_header_from_raw(imgHead, rawHead):
     # # not from the acquisition header
     # imgHead.field_of_view        = 
 
-    imgHead.image_type             = ismrmrd.IMTYPE_MAGNITUDE
+    imgHead.version                = rawHead.version
+    imgHead.flags                  = rawHead.flags
+    imgHead.measurement_uid        = rawHead.measurement_uid
+
     imgHead.position               = rawHead.position
     imgHead.read_dir               = rawHead.read_dir
     imgHead.phase_dir              = rawHead.phase_dir
@@ -41,7 +40,7 @@ def update_img_header_from_raw(imgHead, rawHead):
 
     # Defaults, to be updated by the user
     imgHead.image_type             = ismrmrd.IMTYPE_MAGNITUDE
-    imgHead.image_index            = 0
+    imgHead.image_index            = 1
     imgHead.image_series_index     = 0
 
     imgHead.user_float             = rawHead.user_float
