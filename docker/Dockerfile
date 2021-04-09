@@ -31,7 +31,10 @@ RUN cd /usr/local/lib && tar -czvf libismrmrd.tar.gz libismrmrd*
 
 # ----- Start another clean build without all of the build dependencies of siemens_to_ismrmrd -----
 FROM python:3.9-slim
-LABEL maintainer="Kelvin Chow (kelvin.chow@siemens-healthineers.com)"
+
+LABEL org.opencontainers.image.description="Python MRD Image Reconstruction and Analysis Server"
+LABEL org.opencontainers.image.url="https://github.com/kspaceKelvin/python-ismrmrd-server"
+LABEL org.opencontainers.image.authors="Kelvin Chow (kelvin.chow@siemens-healthineers.com)"
 
 # Copy ISMRMRD files from last stage
 COPY --from=mrd_converter /usr/local/include/ismrmrd        /usr/local/include/ismrmrd/
@@ -69,6 +72,9 @@ RUN  cd /opt/code \
 COPY python-ismrmrd-server  /opt/code/python-ismrmrd-server
 
 # Cleanup files not required after installation
-RUN  rm -r /root/.cache/pip
+RUN  apt-get remove git -y \
+     && apt-get clean \
+     && rm -rf /var/lib/apt/lists/* \
+     && rm -rf /root/.cache/pip
 
 CMD [ "python3", "/opt/code/python-ismrmrd-server/main.py", "-v", "-H=0.0.0.0", "-p=9002", "-l=/tmp/python-ismrmrd-server.log"]
