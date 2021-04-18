@@ -15,16 +15,20 @@ This code is designed to provide a reference implementation of an MRD client/ser
 
 - [invertcontrast.py](invertcontrast.py): This program accepts both incoming raw data as well as image data.  The image contrast is inverted and images are sent back to the client.
 
+- [rgb.py](rgb.py): This program accepts incoming image data, applies a jet colormap, and sends RGB images back to the client.
+
 - [analyzeflow.py](analyzeflow.py): This program accepts velocity phase contrast image data and performs basic masking.
 
 - [client.py](client.py): This script can be used to function as the client for an MRD streaming session, sending data from a file to a server and saving the received images to a different file.  Additional description of its usage is provided below.
 
 - [generate_cartesian_shepp_logan_dataset.py](generate_cartesian_shepp_logan_dataset.py): Creates an MRD raw data file of a Shepp-Logan phantom with Cartesian sampling.  Borrowed from the [ismrmrd-python-tools](https://github.com/ismrmrd/ismrmrd-python-tools) repository.
 
+- [mrd2gif.py](mrd2gif.py): This program converts an MRD image .h5 file into an animated GIF for quick previews.
+
 ### Getting Started
 In a command prompt, generate a sample raw dataset:
 ```
-python generate_cartesian_shepp_logan_dataset.py -o phantom_raw.h5
+python3 generate_cartesian_shepp_logan_dataset.py -o phantom_raw.h5
 ```
 
 MRD data is stored in the HDF file format in a hierarchical structure in groups.  The above example creates a ``dataset`` group containing:
@@ -35,12 +39,12 @@ MRD data is stored in the HDF file format in a hierarchical structure in groups.
 
 Start the server in verbose mode by running:
 ```
-python main.py -v
+python3 main.py -v
 ```
 
 In another command prompt, start the client and send data to the server for reconstruction:
 ```
-python client.py -o phantom_img.h5 phantom_raw.h5
+python3 client.py -o phantom_img.h5 phantom_raw.h5
 ```
 The ``-o`` argument specifies the output file and the last argument is the input file.  If the output file already exists, output data is appended to the existing file.
 
@@ -51,7 +55,13 @@ MRD image data are also stored in HDF files arranged by groups. Each run of the 
 /2020-06-26 16:37.157291/image_0/attributes   MRD MetaAttributes text
 ```
 
-The reconstructed images in /tmp/phantom_raw.h5 can be opened in any HDF viewer such as https://www.hdfgroup.org/downloads/hdfview/.  In Python, the [ismrmrd-python-tools](https://github.com/ismrmrd/ismrmrd-python-tools) repository has the “imageviewer” tool that can be used to view MRD formatted HDF files.  The syntax is:
+The [mrd2gif.py](mrd2gif.py) program can be used to convert an MRD Image file into an animated GIF for quick previewing:
+```
+python3 mrd2gif.py phantom_img.h5
+```
+A GIF file (animated if multiple images present) is generated in the same folder as the MRD file with the same base file name and the group and sub-groups appended.
+
+The reconstructed images in /tmp/phantom_raw.h5 can be opened in any HDF viewer such as https://www.hdfgroup.org/downloads/hdfview/.  In Python, the [ismrmrd-python-tools](https://github.com/ismrmrd/ismrmrd-python-tools) repository has an interactive ``imageviewer`` tool that can be used to view MRD formatted HDF files.  The syntax is:
 ```
 python3 imageviewer.py phantom_img.h5
 ```
