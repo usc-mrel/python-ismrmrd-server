@@ -59,6 +59,9 @@ RUN  cd /opt/code \
      && cd /opt/code/ismrmrd-python-tools \
      && pip3 install --no-cache-dir .
 
+# Various visualization tools including colormaps
+RUN pip3 install --no-cache-dir matplotlib
+
 # # If building from the GitHub repo, uncomment the below section, open a command
 # # prompt in the folder containing this Dockerfile and run the command:
 # #    docker build --no-cache -t kspacekelvin/fire-python ./
