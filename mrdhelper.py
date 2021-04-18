@@ -49,7 +49,7 @@ def update_img_header_from_raw(imgHead, rawHead):
     return imgHead
 
 def get_meta_value(meta, key):
-    """Get a value from MRD Meta Attributes (blank if key not found)"""
+    """Get a value from MRD Meta Attributes (returns None if key not found)"""
     if key in meta.keys():
         return meta[key]
     else:
@@ -102,3 +102,33 @@ def extract_minihead_string_param(miniHead, name):
         return None
     else:
         return res.group(0).strip()
+
+def create_roi(x, y, rgb = (1, 0, 0), thickness = 1, style = 0, visibility = 1):
+    """
+    Create an MRD-formatted ROI
+        Parameters:
+            - x (1D ndarray)     : x coordinates in units of pixels, with (0,0) at the top left
+            - y (1D ndarray)     : y coordinates in units of pixels, matching the length of x
+            - rgb (3 item tuple) : Colour as an (red, green, blue) tuple normalized to 1
+            - thickness (float)  : Line thickness
+            - style (int)        : Line style (0 = solid, 1 = dashed)
+            - visibility (int)   : Line visibility (0 = false, 1 = true)
+        Returns:
+            - roi (string list)  : MRD-formatted ROI, intended to be stored as a MetaAttribute
+                                   with field name starting with "ROI_"
+    """
+    xy = [(x[i], y[i]) for i in range(0, len(x))]  # List of (x,y) tuples
+
+    roi = []
+    roi.append('%f' % rgb[0])
+    roi.append('%f' % rgb[1])
+    roi.append('%f' % rgb[2])
+    roi.append('%f' % thickness)
+    roi.append('%f' % style)
+    roi.append('%f' % visibility)
+
+    for i in range(0, len(xy)):
+        roi.append('%f' % xy[i][0])
+        roi.append('%f' % xy[i][1])
+
+    return roi

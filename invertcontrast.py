@@ -303,12 +303,13 @@ def process_image(images, config, metadata):
 
         # Create a copy of the original ISMRMRD Meta attributes and update
         tmpMeta = meta[iImg]
-        tmpMeta['DataRole']               = 'Image'
-        tmpMeta['ImageProcessingHistory'] = ['FIRE', 'PYTHON']
-        tmpMeta['WindowCenter']           = '16384'
-        tmpMeta['WindowWidth']            = '32768'
+        tmpMeta['DataRole']                       = 'Image'
+        tmpMeta['ImageProcessingHistory']         = ['PYTHON', 'INVERT']
+        tmpMeta['WindowCenter']                   = '16384'
+        tmpMeta['WindowWidth']                    = '32768'
         tmpMeta['SequenceDescriptionAdditional']  = 'FIRE'
-        tmpMeta['Keep_image_geometry']    = 1
+        tmpMeta['Keep_image_geometry']            = 1
+        # tmpMeta['ROI_example']                    = create_example_roi(data.shape)
 
         # Example for setting colormap
         # tmpMeta['LUTFileName']            = 'MicroDeltaHotMetal.pal'
@@ -327,3 +328,23 @@ def process_image(images, config, metadata):
         imagesOut[iImg].attribute_string = metaXml
 
     return imagesOut
+
+# Create an example ROI <3
+def create_example_roi(img_size):
+    t = np.linspace(0, 2*np.pi)
+    x = 16*np.power(np.sin(t), 3)
+    y = -13*np.cos(t) + 5*np.cos(2*t) + 2*np.cos(3*t) + np.cos(4*t)
+
+    # Place ROI in bottom right of image, offset and scaled to 10% of the image size
+    x = (x-np.min(x)) / (np.max(x) - np.min(x))
+    y = (y-np.min(y)) / (np.max(y) - np.min(y))
+    x = (x * 0.08*img_size[0]) + 0.82*img_size[0]
+    y = (y * 0.10*img_size[1]) + 0.80*img_size[1]
+
+    rgb = (1,0,0)  # Red, green, blue color -- normalized to 1
+    thickness  = 1 # Line thickness
+    style      = 0 # Line style (0 = solid, 1 = dashed)
+    visibility = 1 # Line visibility (0 = false, 1 = true)
+
+    roi = mrdhelper.create_roi(x, y, rgb, thickness, style, visibility)
+    return roi
