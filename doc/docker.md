@@ -149,9 +149,9 @@ The following steps can be used to create a chroot image from a Docker image.  T
     -v /tmp:/tmp       Share volume (folder) from host to container
     ```
 
-5. Create a blank chroot file with an ext3 file system 375 MB in size.  The total file size is the product of the number of blocks (count) and the block size (bs).  The chroot file size must be greater than the size of the tar archive above, with sufficient additional space (~10%) for temporary files that may be created during image reconstruction.
+5. Create a blank chroot file with an ext3 file system 425 MB in size.  The total file size is the product of the number of blocks (count) and the block size (bs).  However, the available space is ~30 MB less than the file size due to file system overhead.  The available space must be greater than the size of the tar archive above, with sufficient additional space (~10%) for temporary files that may be created during image reconstruction.
     ```
-    dd if=/dev/zero of=/tmp/fire-python-chroot.img bs=1M count=375
+    dd if=/dev/zero of=/tmp/fire-python-chroot.img bs=1M count=425
     mke2fs -F -t ext3 /tmp/fire-python-chroot.img
     ```
 
@@ -162,21 +162,28 @@ The following steps can be used to create a chroot image from a Docker image.  T
     ```
 
 7. Extract the image contents into the mounted chroot image.
-   ```
+    ```
     tar -xvf /tmp/fire-python-contents.tar --directory=/mnt/chroot
     ```
 
-8. Unmount the chroot image.
+8. Verify the amount of free space available on the chroot image (52 MB in the below):
     ```
-    sudo umount /mnt/chroot
-    ```
-
-9. (Optional) The chroot is highly compressible using the zip file format.
-    ```
-    zip /tmp/fire-python-chroot.zip /tmp/fire-python-chroot.img
+    root@0cdce2f7e3cf:/# df -h
+    Filesystem      Size  Used Avail Use% Mounted on
+    /dev/loop0      396M  324M   52M  87% /mnt/chroot
     ```
 
-10. Exit the Docker container instance if started in step 4.
+9. Unmount the chroot image.
+    ```
+    umount /mnt/chroot
+    ```
+
+10. (Optional) The chroot is highly compressible using the zip file format.
+    ```
+    zip -j /tmp/fire-python-chroot.zip /tmp/fire-python-chroot.img
+    ```
+
+11.  Exit the Docker container instance if started in step 4.
     ```
     exit
     ```
