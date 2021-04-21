@@ -11,7 +11,6 @@ import sys
 import ismrmrd
 import multiprocessing
 from connection import Connection
-
 import time
 import os
 
@@ -25,7 +24,19 @@ defaults = {
 }
 
 # Wait for incoming data and cleanup
-def connection_receive_loop(sock, outfile, outgroup):
+def connection_receive_loop(sock, outfile, outgroup, verbose, logfile):
+
+    if verbose:
+        verbosity = logging.DEBUG
+    else:
+        verbosity = logging.INFO
+
+    if logfile:
+        logging.basicConfig(filename=logfile, format='%(asctime)s - %(message)s', level=verbosity)
+        logging.getLogger().addHandler(logging.StreamHandler(sys.stdout))
+    else:
+        logging.basicConfig(format='%(asctime)s - %(message)s', level=logging.WARNING)
+
     incoming_connection = Connection(sock, True, outfile, "", outgroup)
 
     try:
@@ -126,7 +137,7 @@ def main(args):
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.connect((args.address, args.port))
 
-    process = multiprocessing.Process(target=connection_receive_loop, args=[sock, args.outfile, args.out_group])
+    process = multiprocessing.Process(target=connection_receive_loop, args=[sock, args.outfile, args.out_group, args.verbose, args.logfile])
     process.daemon = True
     process.start()
 
