@@ -35,7 +35,7 @@ def connection_receive_loop(sock, outfile, outgroup, verbose, logfile):
         logging.basicConfig(filename=logfile, format='%(asctime)s - %(message)s', level=verbosity)
         logging.getLogger().addHandler(logging.StreamHandler(sys.stdout))
     else:
-        logging.basicConfig(format='%(asctime)s - %(message)s', level=logging.WARNING)
+        logging.basicConfig(format='%(asctime)s - %(message)s', level=verbosity)
 
     incoming_connection = Connection(sock, True, outfile, "", outgroup)
 
