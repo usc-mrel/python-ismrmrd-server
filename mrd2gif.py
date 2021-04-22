@@ -65,8 +65,18 @@ def main(args):
         images = []
         for imgNum in range(0, dset.number_of_images(group)):
             image = dset.read_image(group, imgNum)
-            data = np.squeeze(image.data) # image.data is [cha z y x] -- squeeze to [y x] for [row col]
-            images.append(Image.fromarray(data))
+
+            if ((image.data.shape[0] == 3) and (image.getHead().image_type == 6)):
+                # RGB images
+                data = np.squeeze(image.data.transpose((2, 3, 0, 1))) # Transpose to [row col rgb]
+                data = data.astype(np.uint8)                          # Stored as uint16 as per MRD specification, but uint8 required for PIL
+                images.append(Image.fromarray(data, mode='RGB'))
+            else:
+                for cha in range(image.data.shape[0]):
+                    for sli in range(image.data.shape[1]):
+                        data = np.squeeze(image.data[cha,sli,...]) # image.data is [cha z y x] -- squeeze to [y x] for [row col]
+                        images.append(Image.fromarray(data))
+
         print("  Read in %s images" % (len(images)))
 
         # Window/level images
@@ -75,10 +85,13 @@ def main(args):
 
         imagesWL = []
         for img in images:
-            data = np.array(img).astype(np.float)
-            data -= minVal
-            data *= 255/(maxVal - minVal)
-            imagesWL.append(Image.fromarray(data))
+            if img.mode != 'RGB':
+                data = np.array(img).astype(np.float)
+                data -= minVal
+                data *= 255/(maxVal - minVal)
+                imagesWL.append(Image.fromarray(data))
+            else:
+                imagesWL.append(img)
 
         # Make valid file name 
         gifFileName = os.path.splitext(os.path.basename(args.filename))[0] + '_' + args.in_group + "_" + group + '.gif'
