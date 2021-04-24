@@ -46,9 +46,12 @@ RUN cd /usr/local/lib && tar -zxvf libismrmrd.tar.gz && rm libismrmrd.tar.gz && 
 # Copy siemens_to_ismrmrd from last stage
 COPY --from=mrd_converter /usr/local/bin/siemens_to_ismrmrd  /usr/local/bin/siemens_to_ismrmrd
 
+# Install xslt and hdf5 dependencies for siemens_to_ismrmrd
+RUN apt-get update && apt-get install --no-install-recommends -y libxslt1.1 libhdf5-103
+
 # Install PyTorch and its dependencies
 COPY python-ismrmrd-server/docker/pytorch/requirements.txt /
-RUN  apt-get update && apt-get install -y git \
+RUN  apt-get install -y git \
      && apt-get install -y libglib2.0-0 \
      && apt install libgl1-mesa-glx -y \
      && pip3 install --no-cache-dir -r requirements.txt

@@ -46,7 +46,8 @@ RUN cd /usr/local/lib && tar -zxvf libismrmrd.tar.gz && rm libismrmrd.tar.gz && 
 # Copy siemens_to_ismrmrd from last stage
 COPY --from=mrd_converter /usr/local/bin/siemens_to_ismrmrd  /usr/local/bin/siemens_to_ismrmrd
 
-RUN apt-get update && apt-get install -y git
+# xslt and hdf5 are dependencies for siemens_to_ismrmrd
+RUN apt-get update && apt-get install --no-install-recommends -y libxslt1.1 libhdf5-103 git
 RUN mkdir -p /opt/code
 
 RUN  cd /opt/code \
