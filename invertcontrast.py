@@ -66,6 +66,16 @@ def process(connection, config, metadata):
             # Image data messages
             # ----------------------------------------------------------
             elif isinstance(item, ismrmrd.Image):
+                # When this criteria is met, run process_group() on the accumulated
+                # data, which returns images that are sent back to the client.
+                # e.g. when the series number changes:
+                if item.image_series_index != currentSeries:
+                    logging.info("Processing a group of images because series index changed to %d", item.image_series_index)
+                    currentSeries = item.image_series_index
+                    image = process_image(imgGroup, config, metadata)
+                    connection.send_image(image)
+                    imgGroup = []
+
                 # Only process magnitude images -- send phase images back without modification (fallback for images with unknown type)
                 if (item.image_type is ismrmrd.IMTYPE_MAGNITUDE) or (item.image_type == 0):
                     imgGroup.append(item)
@@ -76,16 +86,6 @@ def process(connection, config, metadata):
 
                     connection.send_image(item)
                     continue
-
-                # When this criteria is met, run process_group() on the accumulated
-                # data, which returns images that are sent back to the client.
-                # e.g. when the series number changes:
-                if item.image_series_index != currentSeries:
-                    logging.info("Processing a group of images because series index changed to %d", item.image_series_index)
-                    currentSeries = item.image_series_index
-                    image = process_image(imgGroup, config, metadata)
-                    connection.send_image(image)
-                    imgGroup = []
 
             # ----------------------------------------------------------
             # Waveform data messages
