@@ -24,6 +24,8 @@ class Connection:
         self.is_exhausted   = False
         self.logged_sendraw = False
         self.logged_recvraw = False
+        self.recvAcqs       = 0
+        self.recvWaveforms  = 0
         self.handlers       = {
             constants.MRD_MESSAGE_CONFIG_FILE:         self.read_config_file,
             constants.MRD_MESSAGE_CONFIG_TEXT:         self.read_config_text,
@@ -228,12 +230,9 @@ class Connection:
         acquisition.serialize_into(self.socket.send)
 
     def read_acquisition(self):
-        if (logging.root.getEffectiveLevel() is logging.INFO):
-            if (self.logged_recvraw is False):
-                logging.info("<-- Received MRD_MESSAGE_ISMRMRD_ACQUISITION (1008) (no further logging of this type)")
-                self.logged_recvraw = True
-        else:
-            logging.debug("--> Received MRD_MESSAGE_ISMRMRD_ACQUISITION (1008)")
+        self.recvAcqs += 1
+        if (self.recvAcqs == 1) or (self.recvAcqs % 100 == 0):
+            logging.info("<-- Received MRD_MESSAGE_ISMRMRD_ACQUISITION (1008) (total: %d)", self.recvAcqs)
 
         acq = ismrmrd.Acquisition.deserialize_from(self.read)
 
@@ -278,7 +277,10 @@ class Connection:
         logging.debug("   Reading in %d bytes of attributes", attribute_length.value)
 
         attribute_bytes = self.read(attribute_length.value)
-        logging.debug("   Attributes: %s", attribute_bytes.decode('utf-8'))
+        if (attribute_length.value > 25000):
+            logging.debug("   Attributes (truncated): %s", attribute_bytes[0:24999].decode('utf-8'))
+        else:
+            logging.debug("   Attributes: %s", attribute_bytes.decode('utf-8'))
 
         image = ismrmrd.Image(header_bytes, attribute_bytes.decode('utf-8'))
 
@@ -312,7 +314,10 @@ class Connection:
         waveform.serialize_into(self.socket.send)
 
     def read_waveform(self):
-        logging.info("<-- Received MRD_MESSAGE_ISMRMRD_WAVEFORM (1026)")
+        self.recvWaveforms += 1
+        if (self.recvWaveforms == 1) or (self.recvWaveforms % 100 == 0):
+            logging.info("<-- Received MRD_MESSAGE_ISMRMRD_WAVEFORM (1026) (total: %d)", self.recvWaveforms)
+
         waveform = ismrmrd.Waveform.deserialize_from(self.read)
 
         if (self.savedata is True):
