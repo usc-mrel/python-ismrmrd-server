@@ -149,9 +149,9 @@ The following steps can be used to create a chroot image from a Docker image.  T
     -v /tmp:/tmp       Share volume (folder) from host to container
     ```
 
-5. Create a blank chroot file with an ext3 file system 425 MB in size.  The total file size is the product of the number of blocks (count) and the block size (bs).  However, the available space is ~30 MB less than the file size due to file system overhead.  The available space must be greater than the size of the tar archive above, with sufficient additional space (~10%) for temporary files that may be created during image reconstruction.
+5. Create a blank chroot file with an ext3 file system 450 MB in size.  The total file size is the product of the number of blocks (count) and the block size (bs).  However, the available space is ~30 MB less than the file size due to file system overhead.  The available space must be greater than the size of the tar archive above, with sufficient additional space (~10%) for temporary files that may be created during image reconstruction.
     ```
-    dd if=/dev/zero of=/tmp/fire-python-chroot.img bs=1M count=425
+    dd if=/dev/zero of=/tmp/fire-python-chroot.img bs=1M count=450
     mke2fs -F -t ext3 /tmp/fire-python-chroot.img
     ```
 
@@ -166,7 +166,7 @@ The following steps can be used to create a chroot image from a Docker image.  T
     tar -xvf /tmp/fire-python-contents.tar --directory=/mnt/chroot
     ```
 
-8. Verify the amount of free space available on the chroot image (52 MB in the below):
+8. Verify the amount of free space available on the chroot image by running ``df -h`` (52 MB in the below):
     ```
     root@0cdce2f7e3cf:/# df -h
     Filesystem      Size  Used Avail Use% Mounted on

@@ -22,9 +22,11 @@ class Connection:
         self.dset           = None
         self.socket         = socket
         self.is_exhausted   = False
-        self.logged_sendraw = False
-        self.logged_recvraw = False
+        self.sentAcqs       = 0
+        self.sentImages     = 0
+        self.sentWaveforms  = 0
         self.recvAcqs       = 0
+        self.recvImages     = 0
         self.recvWaveforms  = 0
         self.handlers       = {
             constants.MRD_MESSAGE_CONFIG_FILE:         self.read_config_file,
@@ -219,12 +221,9 @@ class Connection:
     #   Trajectory       (  variable, float         )
     #   Raw k-space data (  variable, float         )
     def send_acquisition(self, acquisition):
-        if (logging.root.getEffectiveLevel() is logging.INFO):
-            if (self.logged_sendraw is False):
-                logging.info("--> Sending MRD_MESSAGE_ISMRMRD_ACQUISITION (1008) (no further logging of this type)")
-                self.logged_sendraw = True
-        else:
-            logging.debug("--> Sending MRD_MESSAGE_ISMRMRD_ACQUISITION (1008)")
+        self.sentAcqs += 1
+        if (self.sentAcqs == 1) or (self.sentAcqs % 100 == 0):
+            logging.info("--> Sending MRD_MESSAGE_ISMRMRD_ACQUISITION (1008) (total: %d)", self.sentAcqs)
 
         self.socket.send(constants.MrdMessageIdentifier.pack(constants.MRD_MESSAGE_ISMRMRD_ACQUISITION))
         acquisition.serialize_into(self.socket.send)
@@ -255,6 +254,7 @@ class Connection:
 
         logging.info("--> Sending MRD_MESSAGE_ISMRMRD_IMAGE (1022) (%d images)", len(images))
         for image in images:
+            self.sentImages += 1
             self.socket.send(constants.MrdMessageIdentifier.pack(constants.MRD_MESSAGE_ISMRMRD_IMAGE))
             image.serialize_into(self.socket.send)
 
@@ -265,6 +265,7 @@ class Connection:
         # self.socket.send(bytes(image.data))
 
     def read_image(self):
+        self.recvImages += 1
         logging.info("<-- Received MRD_MESSAGE_ISMRMRD_IMAGE (1022)")
         # return ismrmrd.Image.deserialize_from(self.read)
 
@@ -309,7 +310,10 @@ class Connection:
     #   Fixed header     ( 240 bytes, mixed         )
     #   Waveform data    (  variable, uint32_t      )
     def send_waveform(self, waveform):
-        # logging.info("--> Sending MRD_MESSAGE_ISMRMRD_WAVEFORM (1026)")
+        self.sentWaveforms += 1
+        if (self.sentWaveforms == 1) or (self.sentWaveforms % 100 == 0):
+            logging.info("--> Sending MRD_MESSAGE_ISMRMRD_WAVEFORM (1026) (total: %d)", self.sentWaveforms)
+
         self.socket.send(constants.MrdMessageIdentifier.pack(constants.MRD_MESSAGE_ISMRMRD_WAVEFORM))
         waveform.serialize_into(self.socket.send)
 
