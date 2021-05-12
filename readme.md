@@ -25,6 +25,8 @@ This code is designed to provide a reference implementation of an MRD client/ser
 
 - [mrd2gif.py](mrd2gif.py): This program converts an MRD image .h5 file into an animated GIF for quick previews.
 
+- [dicom2mrd.py](dicom2mrd.py): This program converts a folder of DICOM images to an MRD image .h5 file, allowing DICOM images to be use as input for MRD streaming data.
+
 ### Getting Started
 In a command prompt, generate a sample raw dataset:
 ```
