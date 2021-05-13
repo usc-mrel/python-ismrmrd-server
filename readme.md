@@ -1,33 +1,5 @@
-### Code Design
-This code is designed to provide a reference implementation of an MRD client/server pair.  It is modular and can be easily extended to include additional reconstruction/analysis programs.
-
-- [main.py](main.py):  This is the main program, parsing input arguments and starting a "Server" class instance.
-
-- [server.py](server.py):  The “Server” class determines which reconstruction algorithm (e.g. "simplefft" or "invertcontrast") is used for the incoming data, based on the requested config information.
-
-- [connection.py](connection.py): The “Connection” class handles network communications to/from the client, parsing streaming messages of different types, as detailed in the section on MR Data Message Format.  The connection class also saves incoming data to MRD files if this option is selected.
-
-- [constants.py](constants.py): This file contains constants that define the message types of the MRD streaming data format.
-
-- [mrdhelper.py](mrdhelper.py): This class contains helper functions for commonly used MRD tasks such as copying header information from raw data to image data and working with image metadata.
-
-- [simplefft.py](simplefft.py): This file contains code for performing a rudimentary image reconstruction from raw data, consisting of a Fourier transform, sum-of-squares coil combination, signal intensity normalization, and removal of phase oversampling.
-
-- [invertcontrast.py](invertcontrast.py): This program accepts both incoming raw data as well as image data.  The image contrast is inverted and images are sent back to the client.
-
-- [rgb.py](rgb.py): This program accepts incoming image data, applies a jet colormap, and sends RGB images back to the client.
-
-- [analyzeflow.py](analyzeflow.py): This program accepts velocity phase contrast image data and performs basic masking.
-
-- [client.py](client.py): This script can be used to function as the client for an MRD streaming session, sending data from a file to a server and saving the received images to a different file.  Additional description of its usage is provided below.
-
-- [generate_cartesian_shepp_logan_dataset.py](generate_cartesian_shepp_logan_dataset.py): Creates an MRD raw data file of a Shepp-Logan phantom with Cartesian sampling.  Borrowed from the [ismrmrd-python-tools](https://github.com/ismrmrd/ismrmrd-python-tools) repository.
-
-- [mrd2gif.py](mrd2gif.py): This program converts an MRD image .h5 file into an animated GIF for quick previews.
-
-- [dicom2mrd.py](dicom2mrd.py): This program converts a folder of DICOM images to an MRD image .h5 file, allowing DICOM images to be use as input for MRD streaming data.
-
-### Getting Started
+## Getting Started
+### Reconstruct a phantom raw data set using the MRD client/server pair
 In a command prompt, generate a sample raw dataset:
 ```
 python3 generate_cartesian_shepp_logan_dataset.py -o phantom_raw.h5
@@ -74,7 +46,87 @@ img = h5read('/tmp/phantom_img.h5', '/dataset/2020-06-26 16:37.157291/data');
 figure, imagesc(img), axis image, colormap(gray)
 ```
 
-### Saving incoming data
+### Creating a custom reconstruction/analysis module
+The MRD server has a modular design to allow for easy integration of custom reconstruction or image analysis code.  In this example, a high-pass filter is applied to images.
+
+1. Create a copy of [invertcontrast.py](invertcontrast.py) named ``filterimage.py``.  For other workflows, it may be preferable to start with another example such as [simplefft.py](simplefft.py) or [analyzeflow.py](analyzeflow.py).
+
+2. The Python [Pillow](https://github.com/python-pillow/Pillow/) library contains a high-pass filter named [FIND_EDGES](https://pythontic.com/image-processing/pillow/edge-detection).  Add the following line to the top of the newly created ``filterimage.py`` to import this library:
+    ```
+    from PIL import Image, ImageFilter
+    ```
+
+3. In the ``process_image()`` function the ``filterimage.py`` file, find the sections where the incoming images are being [normalized](https://github.com/kspaceKelvin/python-ismrmrd-server/blob/6684b4d17c0591e64b34bc06fdd06d78a2d8c659/invertcontrast.py#L261) and [filtered](https://github.com/kspaceKelvin/python-ismrmrd-server/blob/6684b4d17c0591e64b34bc06fdd06d78a2d8c659/invertcontrast.py#L267). The Pillow image filters require images with values in the range 0-255, so replace these two sections as follows:
+
+    **Old code:**
+    ```
+        # Normalize and convert to int16
+        data = data.astype(np.float64)
+        data *= 32767/data.max()
+        data = np.around(data)
+        data = data.astype(np.int16)
+
+        # Invert image contrast
+        data = 32767-data
+        data = np.abs(data)
+        data = data.astype(np.int16)
+        np.save(debugFolder + "/" + "imgInverted.npy", data)
+    ```
+
+    **New code:**
+    ```
+        # Normalize to range 0-255
+        data = data.astype(np.float64)
+        data *= 255/data.max()
+
+        # Apply a 2D high-pass filter for each image
+        from PIL import Image, ImageFilter
+        for iImg in range(data.shape[-1]):
+            im = Image.fromarray(np.squeeze(data[...,iImg])).convert('RGB')
+            im = im.filter(ImageFilter.FIND_EDGES)
+            data[:,:,0,0,iImg] = np.asarray(im)[...,0]
+
+        # Rescale back to 16-bit
+        data = data * 32767.0/data.max()
+        data = data.astype(np.int16)
+        np.save(debugFolder + "/" + "imgFiltered.npy", data)
+    ```
+
+4. The module used by the server is specified by the ``config`` option on the client side.  The Server class used in this code [attempts to find](https://github.com/kspaceKelvin/python-ismrmrd-server/blob/6684b4d17c0591e64b34bc06fdd06d78a2d8c659/server.py#L105) a Python module matching the name of the config file if it doesn't match one of the default examples.  [Start the server](https://github.com/kspaceKelvin/python-ismrmrd-server#reconstruct-a-phantom-raw-data-set-using-the-mrd-clientserver-pair) and in a separate window, run the client with the ``-c filterimage`` option to specify the new config:
+    ```
+    python3 client.py -c filterimage -o phantom_img.h5 phantom_raw.h5
+    ```
+
+## Code Design
+This code is designed to provide a reference implementation of an MRD client/server pair.  It is modular and can be easily extended to include additional reconstruction/analysis programs.
+
+- [main.py](main.py):  This is the main program, parsing input arguments and starting a "Server" class instance.
+
+- [server.py](server.py):  The “Server” class determines which reconstruction algorithm (e.g. "simplefft" or "invertcontrast") is used for the incoming data, based on the requested config information.
+
+- [connection.py](connection.py): The “Connection” class handles network communications to/from the client, parsing streaming messages of different types, as detailed in the section on MR Data Message Format.  The connection class also saves incoming data to MRD files if this option is selected.
+
+- [constants.py](constants.py): This file contains constants that define the message types of the MRD streaming data format.
+
+- [mrdhelper.py](mrdhelper.py): This class contains helper functions for commonly used MRD tasks such as copying header information from raw data to image data and working with image metadata.
+
+- [simplefft.py](simplefft.py): This file contains code for performing a rudimentary image reconstruction from raw data, consisting of a Fourier transform, sum-of-squares coil combination, signal intensity normalization, and removal of phase oversampling.
+
+- [invertcontrast.py](invertcontrast.py): This program accepts both incoming raw data as well as image data.  The image contrast is inverted and images are sent back to the client.
+
+- [rgb.py](rgb.py): This program accepts incoming image data, applies a jet colormap, and sends RGB images back to the client.
+
+- [analyzeflow.py](analyzeflow.py): This program accepts velocity phase contrast image data and performs basic masking.
+
+- [client.py](client.py): This script can be used to function as the client for an MRD streaming session, sending data from a file to a server and saving the received images to a different file.  Additional description of its usage is provided below.
+
+- [generate_cartesian_shepp_logan_dataset.py](generate_cartesian_shepp_logan_dataset.py): Creates an MRD raw data file of a Shepp-Logan phantom with Cartesian sampling.  Borrowed from the [ismrmrd-python-tools](https://github.com/ismrmrd/ismrmrd-python-tools) repository.
+
+- [mrd2gif.py](mrd2gif.py): This program converts an MRD image .h5 file into an animated GIF for quick previews.
+
+- [dicom2mrd.py](dicom2mrd.py): This program converts a folder of DICOM images to an MRD image .h5 file, allowing DICOM images to be use as input for MRD streaming data.
+
+## Saving incoming data
 It may be desirable for the MRD server to save a copy of incoming data from the client.  For example, if the client is an MRI scanner, then the saved data can be used for offline simulations at a later time.  This may be particularly useful when the MRI scanner client is sending image data, as images are not stored in a scanner's raw data file and would otherwise require offline simulation of the MRI scanner reconstruction as well.
 
 The feature may be turned on by starting the server with the ``-s`` option (disabled by default).  Data files are named by the current date/time and stored in ``/tmp/share/saved_data``.  The saved data folder can be changed using the ``-S`` option.  For example, to turn on saving of incoming data in the ``/tmp`` folder, start the server with:
@@ -88,7 +140,7 @@ Alternatively, this feature can be enabled on a per-session basis when the clien
 
 The resulting saved data files are in MRD .h5 format and can be used as input for ``client.py`` as detailed above.
 
-### Startup scripts
+## Startup scripts
 There are three scripts that may be useful when starting the Python server in a chroot environment (i.e. on the scanner).  When using this server with FIRE, the startup script is specified in the fire.ini file as ``chroot_command``.  The scripts are:
 
 - [start-fire-python-server.sh](start-fire-python-server.sh):  This script takes one optional argument, which is the location of a log file.  If not provided, logging outputs are discarded.
