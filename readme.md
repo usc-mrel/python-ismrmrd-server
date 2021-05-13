@@ -97,6 +97,31 @@ The MRD server has a modular design to allow for easy integration of custom reco
     python3 client.py -c filterimage -o phantom_img.h5 phantom_raw.h5
     ```
 
+### Using raw data from an MRI scanner
+Raw data from MRI scanners can be converted into MRD format using publicly available conversion tools such as [siemens_to_ismrmrd](https://github.com/ismrmrd/siemens_to_ismrmrd), [ge_to_ismrmrd](https://github.com/ismrmrd/ge_to_ismrmrd), [philips_to_ismrmrd](https://github.com/ismrmrd/philips_to_ismrmrd), and [bruker_to_ismrmrd](https://github.com/ismrmrd/bruker_to_ismrmrd).  These can be used as input data for the client as part of streaming MRD framework.
+
+For Siemens data, raw data in .dat format can be converted and processed as follows:
+1. Convert a raw data file named ``gre.dat`` into MRD format:
+    ```
+    siemens_to_ismrmrd -Z -f gre.dat -o gre_raw.h5
+    ```
+
+    The following options are used:
+    ```
+    -Z  Convert all acquisitions from a multi-measurement (multi-RAID) file
+    -f  Input file (Siemens raw data .dat file)
+    -o  Output file (MRD raw data .h5 file)
+    ```
+
+    If the input file is a multi-RAID file, then several output files are created such as ``gre_raw_1.h5`` and ``gre_raw_2.h5``.  The first measurements are dependency data while the main acquisition is in the last numbered file.
+
+2. [Start the server](https://github.com/kspaceKelvin/python-ismrmrd-server#reconstruct-a-phantom-raw-data-set-using-the-mrd-clientserver-pair) and in a separate window, run the client using the converted file:
+    ```
+    python3 client.py -c invertcontrast -o gre_img.h5 gre_raw_2.h5
+    ```
+
+    Note that the invertcontrast example module only does basic Fourier transform reconstruction and does not support undersampling or more complex acquisitions.
+
 ### Using DICOM images as input data
 For image processing workflows, DICOM images can be used by converting them into MRD format.  The [dicom2mrd.py] script can be used to convert data in this manner.
 
