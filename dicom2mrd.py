@@ -42,7 +42,7 @@ def CreateMrdHeader(dset):
     mrdHead.acquisitionSystemInformation                       = ismrmrd.xsd.acquisitionSystemInformationType()
     mrdHead.acquisitionSystemInformation.systemVendor          = dset.Manufacturer
     mrdHead.acquisitionSystemInformation.systemModel           = dset.ManufacturerModelName
-    mrdHead.acquisitionSystemInformation.systemFieldStrength_T = dset.MagneticFieldStrength
+    mrdHead.acquisitionSystemInformation.systemFieldStrength_T = float(dset.MagneticFieldStrength)
     mrdHead.acquisitionSystemInformation.institutionName       = dset.InstitutionName
     try:
         mrdHead.acquisitionSystemInformation.stationName       = dset.StationName
@@ -50,7 +50,7 @@ def CreateMrdHeader(dset):
         pass
 
     mrdHead.experimentalConditions                             = ismrmrd.xsd.experimentalConditionsType()
-    mrdHead.experimentalConditions.H1resonanceFrequency_Hz     = long(dset.MagneticFieldStrength*4258e4)
+    mrdHead.experimentalConditions.H1resonanceFrequency_Hz     = int(dset.MagneticFieldStrength*4258e4)
 
     enc = ismrmrd.xsd.encodingType()
     enc.trajectory                                              = ismrmrd.xsd.trajectoryType('cartesian')
@@ -61,22 +61,25 @@ def CreateMrdHeader(dset):
     encSpace.matrixSize.z                                       = 1
     encSpace.fieldOfView_mm                                     = ismrmrd.xsd.fieldOfViewMm()
     if dset.SOPClassUID.name == 'Enhanced MR Image Storage':
-        encSpace.fieldOfView_mm.x                               = dset.PerFrameFunctionalGroupsSequence[0].PixelMeasuresSequence[0].PixelSpacing[0]*dset.Rows
-        encSpace.fieldOfView_mm.y                               = dset.PerFrameFunctionalGroupsSequence[0].PixelMeasuresSequence[0].PixelSpacing[1]*dset.Columns
-        encSpace.fieldOfView_mm.z                               = dset.PerFrameFunctionalGroupsSequence[0].PixelMeasuresSequence[0].SliceThickness
+        encSpace.fieldOfView_mm.x                               =       dset.PerFrameFunctionalGroupsSequence[0].PixelMeasuresSequence[0].PixelSpacing[0]*dset.Rows
+        encSpace.fieldOfView_mm.y                               =       dset.PerFrameFunctionalGroupsSequence[0].PixelMeasuresSequence[0].PixelSpacing[1]*dset.Columns
+        encSpace.fieldOfView_mm.z                               = float(dset.PerFrameFunctionalGroupsSequence[0].PixelMeasuresSequence[0].SliceThickness)
     else:
-        encSpace.fieldOfView_mm.x                               = dset.PixelSpacing[0]*dset.Rows
-        encSpace.fieldOfView_mm.y                               = dset.PixelSpacing[1]*dset.Columns
-        encSpace.fieldOfView_mm.z                               = dset.SliceThickness
+        encSpace.fieldOfView_mm.x                               =       dset.PixelSpacing[0]*dset.Rows
+        encSpace.fieldOfView_mm.y                               =       dset.PixelSpacing[1]*dset.Columns
+        encSpace.fieldOfView_mm.z                               = float(dset.SliceThickness)
     enc.encodedSpace                                            = encSpace
     enc.reconSpace                                              = encSpace
     enc.encodingLimits                                          = ismrmrd.xsd.encodingLimitsType()
     enc.parallelImaging                                         = ismrmrd.xsd.parallelImagingType()
 
+    enc.parallelImaging.accelerationFactor                      = ismrmrd.xsd.accelerationFactorType()
     if dset.SOPClassUID.name == 'Enhanced MR Image Storage':
-        enc.parallelImaging.accelerationFactor                        = ismrmrd.xsd.accelerationFactorType()
         enc.parallelImaging.accelerationFactor.kspace_encoding_step_1 = dset.SharedFunctionalGroupsSequence[0].MRModifierSequence[0].ParallelReductionFactorInPlane
         enc.parallelImaging.accelerationFactor.kspace_encoding_step_2 = dset.SharedFunctionalGroupsSequence[0].MRModifierSequence[0].ParallelReductionFactorOutOfPlane
+    else:
+        enc.parallelImaging.accelerationFactor.kspace_encoding_step_1 = 1
+        enc.parallelImaging.accelerationFactor.kspace_encoding_step_2 = 1
 
     mrdHead.encoding.append(enc)
 
@@ -87,7 +90,7 @@ def CreateMrdHeader(dset):
 def GetDicomFiles(directory):
     """Get path to all DICOMs in a directory and its sub-directories"""
     for entry in os.scandir(directory):
-        if entry.is_file() and (entry.path.endswith(".dcm") or entry.path.endswith(".ima")):
+        if entry.is_file() and (entry.path.lower().endswith(".dcm") or entry.path.lower().endswith(".ima")):
             yield entry.path
         elif entry.is_dir():
             yield from GetDicomFiles(entry.path)

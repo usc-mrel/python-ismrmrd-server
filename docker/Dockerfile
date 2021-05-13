@@ -60,8 +60,9 @@ RUN  cd /opt/code \
      && cd /opt/code/ismrmrd-python-tools \
      && pip3 install --no-cache-dir .
 
-# Various visualization tools including colormaps
-RUN pip3 install --no-cache-dir matplotlib
+# matplotlib is used by rgb.py and provides various visualization tools including colormaps
+# pydicom is used by dicom2mrd.py to parse DICOM data
+RUN pip3 install --no-cache-dir matplotlib pydicom
 
 # # If building from the GitHub repo, uncomment the below section, open a command
 # # prompt in the folder containing this Dockerfile and run the command:

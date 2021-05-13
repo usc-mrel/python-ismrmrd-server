@@ -97,6 +97,22 @@ The MRD server has a modular design to allow for easy integration of custom reco
     python3 client.py -c filterimage -o phantom_img.h5 phantom_raw.h5
     ```
 
+### Using DICOM images as input data
+For image processing workflows, DICOM images can be used by converting them into MRD format.  The [dicom2mrd.py] script can be used to convert data in this manner.
+
+1. Create a folder containing DICOM files with file extensions .ima or .dcm.  Files can also be organized in sub-folders if desired.
+
+2. Run the dicom2mrd conversion script:
+    ```
+    python3 dicom2mrd.py -o dicom_img.h5 dicoms
+    ```
+    Where the DICOM files are in a folder called ``dicoms`` and an output file ``dicom_img.h5`` is created containing the MRD formatted images.
+
+2. [Start the server](https://github.com/kspaceKelvin/python-ismrmrd-server#reconstruct-a-phantom-raw-data-set-using-the-mrd-clientserver-pair) and in a separate window, run the client using the converted file:
+    ```
+    python3 client.py -c invertcontrast -o dicom_img_inverted.h5 dicom_img.h5
+    ```
+
 ## Code Design
 This code is designed to provide a reference implementation of an MRD client/server pair.  It is modular and can be easily extended to include additional reconstruction/analysis programs.
 
