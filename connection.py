@@ -138,8 +138,9 @@ class Connection:
     def send_config_text(self, contents):
         logging.info("--> Sending MRD_MESSAGE_CONFIG_TEXT (2)")
         self.socket.send(constants.MrdMessageIdentifier.pack(constants.MRD_MESSAGE_CONFIG_TEXT))
-        self.socket.send(constants.MrdMessageLength.pack(len(contents)+1)) # Add null terminator
-        self.socket.send('%s\0' % contents)                                # Add null terminator
+        contents_with_nul = '%s\0' % contents # Add null terminator
+        self.socket.send(constants.MrdMessageLength.pack(len(contents_with_nul.encode())))
+        self.socket.send(contents_with_nul.encode())
 
     def read_config_text(self):
         logging.info("<-- Received MRD_MESSAGE_CONFIG_TEXT (2)")
