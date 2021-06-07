@@ -38,10 +38,9 @@ class Connection:
             constants.MRD_MESSAGE_ISMRMRD_WAVEFORM:    self.read_waveform,
             constants.MRD_MESSAGE_ISMRMRD_IMAGE:       self.read_image
         }
-        self.create_save_file()
 
     def create_save_file(self):
-        if (self.savedata is True):
+        if self.savedata is True:
             # Create savedata folder, if necessary
             if ((self.savedataFolder) and (not os.path.exists(self.savedataFolder))):
                 os.makedirs(self.savedataFolder)
@@ -119,7 +118,10 @@ class Connection:
                 self.savedata = True
                 self.create_save_file()
 
-        if (self.savedata is True):
+        if self.savedata is True:
+            if self.dset is None:
+                self.create_save_file()
+
             self.dset._file.require_group("dataset")
             dsetConfigFile = self.dset._dataset.require_dataset('config_file',shape=(1,), dtype=h5py.special_dtype(vlen=bytes))
             dsetConfigFile[0] = bytes(config_file, 'utf-8')
@@ -145,7 +147,10 @@ class Connection:
         config = self.read(length)
         config = config.decode("utf-8").split('\x00',1)[0]  # Strip off null teminator
 
-        if (self.savedata is True):
+        if self.savedata is True:
+            if self.dset is None:
+                self.create_save_file()
+
             self.dset._file.require_group("dataset")
             dsetConfig = self.dset._dataset.require_dataset('config',shape=(1,), dtype=h5py.special_dtype(vlen=bytes))
             dsetConfig[0] = bytes(config, 'utf-8')
@@ -172,7 +177,10 @@ class Connection:
         metadata = self.read(length)
         metadata = metadata.decode("utf-8").split('\x00',1)[0]  # Strip off null teminator
 
-        if (self.savedata is True):
+        if self.savedata is True:
+            if self.dset is None:
+                self.create_save_file()
+
             logging.debug("    Saving XML header to file")
             self.dset.write_xml_header(bytes(metadata, 'utf-8'))
 
@@ -187,9 +195,13 @@ class Connection:
     def read_close(self):
         logging.info("<-- Received MRD_MESSAGE_CLOSE (4)")
 
-        if (self.savedata is True):
+        if self.savedata is True:
+            if self.dset is None:
+                self.create_save_file()
+
             logging.debug("Closing file %s", self.dset._file.filename)
             self.dset.close()
+            self.dset = None
 
         self.is_exhausted = True
         return
@@ -235,7 +247,10 @@ class Connection:
 
         acq = ismrmrd.Acquisition.deserialize_from(self.read)
 
-        if (self.savedata is True):
+        if self.savedata is True:
+            if self.dset is None:
+                self.create_save_file()
+
             self.dset.append_acquisition(acq)
 
         return acq
@@ -297,7 +312,10 @@ class Connection:
 
         image.data.ravel()[:] = np.frombuffer(data_bytes, dtype=ismrmrd.get_dtype_from_data_type(image.data_type))
 
-        if (self.savedata is True):
+        if self.savedata is True:
+            if self.dset is None:
+                self.create_save_file()
+
             image.attribute_string = ismrmrd.Meta.deserialize(image.attribute_string.split('\x00',1)[0]).serialize()  # Strip off null teminator
             self.dset.append_image("images_%d" % image.image_series_index, image)
 
@@ -324,7 +342,10 @@ class Connection:
 
         waveform = ismrmrd.Waveform.deserialize_from(self.read)
 
-        if (self.savedata is True):
+        if self.savedata is True:
+            if self.dset is None:
+                self.create_save_file()
+
             self.dset.append_waveform(waveform)
 
         return waveform
