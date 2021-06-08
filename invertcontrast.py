@@ -10,6 +10,8 @@ import base64
 import ctypes
 import re
 import mrdhelper
+import constants
+from time import perf_counter
 
 # Folder for debug output files
 debugFolder = "/tmp/share/debug"
@@ -58,7 +60,7 @@ def process(connection, config, metadata):
                 # data, which returns images that are sent back to the client.
                 if item.is_flag_set(ismrmrd.ACQ_LAST_IN_SLICE):
                     logging.info("Processing a group of k-space data")
-                    image = process_raw(acqGroup, config, metadata)
+                    image = process_raw(acqGroup, connection, config, metadata)
                     connection.send_image(image)
                     acqGroup = []
 
@@ -72,7 +74,7 @@ def process(connection, config, metadata):
                 if item.image_series_index != currentSeries:
                     logging.info("Processing a group of images because series index changed to %d", item.image_series_index)
                     currentSeries = item.image_series_index
-                    image = process_image(imgGroup, config, metadata)
+                    image = process_image(imgGroup, connection, config, metadata)
                     connection.send_image(image)
                     imgGroup = []
 
@@ -113,13 +115,13 @@ def process(connection, config, metadata):
         # image in a series is typically not separately flagged.
         if len(acqGroup) > 0:
             logging.info("Processing a group of k-space data (untriggered)")
-            image = process_raw(acqGroup, config, metadata)
+            image = process_raw(acqGroup, connection, config, metadata)
             connection.send_image(image)
             acqGroup = []
 
         if len(imgGroup) > 0:
             logging.info("Processing a group of images (untriggered)")
-            image = process_image(imgGroup, config, metadata)
+            image = process_image(imgGroup, connection, config, metadata)
             connection.send_image(image)
             imgGroup = []
 
@@ -127,7 +129,10 @@ def process(connection, config, metadata):
         connection.send_close()
 
 
-def process_raw(group, config, metadata):
+def process_raw(group, connection, config, metadata):
+    # Start timer
+    tic = perf_counter()
+
     # Create folder, if necessary
     if not os.path.exists(debugFolder):
         os.makedirs(debugFolder)
@@ -192,6 +197,14 @@ def process_raw(group, config, metadata):
     logging.debug("Image without oversampling is size %s" % (data.shape,))
     np.save(debugFolder + "/" + "imgCrop.npy", data)
 
+    # Measure processing time
+    toc = perf_counter()
+    strProcessTime = "Total processing time: %.2f ms" % ((toc-tic)*1000.0)
+    logging.info(strProcessTime)
+
+    # Send this as a text message back to the client
+    connection.send_logging(constants.MRD_LOGGING_INFO, strProcessTime)
+
     # Format as ISMRMRD image data
     imagesOut = []
     for phs in range(data.shape[2]):
@@ -222,12 +235,12 @@ def process_raw(group, config, metadata):
         imagesOut.append(tmpImg)
 
     # Call process_image() to invert image contrast
-    imagesOut = process_image(imagesOut, config, metadata)
+    imagesOut = process_image(imagesOut, connection, config, metadata)
 
     return imagesOut
 
 
-def process_image(images, config, metadata):
+def process_image(images, connection, config, metadata):
     # Create folder, if necessary
     if not os.path.exists(debugFolder):
         os.makedirs(debugFolder)

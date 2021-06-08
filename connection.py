@@ -58,6 +58,15 @@ class Connection:
             self.dset = ismrmrd.Dataset(self.mrdFilePath, self.savedataGroup)
             self.dset._file.require_group(self.savedataGroup)
 
+    def send_logging(self, level, contents):
+        try:
+            formatted_contents = "%s %s" % (level, contents)
+        except:
+            logging.warning("Unsupported logging level: " + level)
+            formatted_contents = contents
+
+        self.send_text(formatted_contents)
+
     def __iter__(self):
         while not self.is_exhausted:
             yield self.next()
@@ -234,6 +243,7 @@ class Connection:
         length = self.read_mrd_message_length()
         text = self.read(length)
         text = text.decode("utf-8").split('\x00',1)[0]  # Strip off null teminator
+        logging.info("    %s", text)
         return text
 
     # ----- MRD_MESSAGE_ISMRMRD_ACQUISITION (1008) -----------------------------
