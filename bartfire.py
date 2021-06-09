@@ -122,11 +122,6 @@ def process_raw(group, config, metadata):
     logging.debug("Raw data is size %s" % (data.shape,))
     np.save(debugFolder + "/" + "raw.npy", data)
 
-    # The Python BART wrapper writes temporary files into the current directory.
-    # While they're deleted afterwards, move into the temp folder in case the
-    # current folder fills up (e.g. on a limited space chroot image)
-    os.chdir( tempfile.gettempdir() )
-
     # Fourier Transform with BART
     logging.info("Calling BART FFT")
     data = bart(1, 'fft -u -i 3', data)
