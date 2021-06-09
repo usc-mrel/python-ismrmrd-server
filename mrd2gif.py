@@ -86,7 +86,7 @@ def main(args):
         imagesWL = []
         for img in images:
             if img.mode != 'RGB':
-                data = np.array(img).astype(np.float)
+                data = np.array(img).astype(float)
                 data -= minVal
                 data *= 255/(maxVal - minVal)
                 imagesWL.append(Image.fromarray(data))

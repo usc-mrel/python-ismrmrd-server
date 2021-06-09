@@ -183,7 +183,7 @@ The following steps can be used to create a chroot image from a Docker image.  T
     zip -j /tmp/fire-python-chroot.zip /tmp/fire-python-chroot.img
     ```
 
-11.  Exit the Docker container instance if started in step 4.
+11. Exit the Docker container instance if started in step 4.
     ```
     exit
     ```

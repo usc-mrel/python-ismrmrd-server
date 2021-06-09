@@ -45,15 +45,10 @@ def process(connection, config, metadata):
             # Image data messages
             # ----------------------------------------------------------
             if isinstance(item, ismrmrd.Image):
-                meta = ismrmrd.Meta.deserialize(item.attribute_string)
-                slice = extract_minihead_long_param(base64.b64decode(meta['IceMiniHead']).decode('utf-8'), 'AnatomicalPartitionNo')
-                item.slice = slice
-
                 # Only process phase images
                 if item.image_type is ismrmrd.IMTYPE_PHASE:
                     imgGroup.append(item)
                 else:
-
                     connection.send_image(item)
                     continue
 
@@ -204,15 +199,3 @@ def process_image(images, connection, config, metadata):
 
         last_series += 1
     return imagesOut
-
-def extract_minihead_long_param(miniHead, name):
-    # Extract a long parameter from the serialized text of the ICE MiniHeader
-    expr = r'(?<=<ParamLong."' + name + r'">{)\s*\d*\s*'
-    res = re.search(expr, miniHead)
-
-    if res is None:
-        return None
-    elif res.group(0).isspace():
-        return 0
-    else:
-        return int(res.group(0))
