@@ -47,54 +47,105 @@ figure, imagesc(img), axis image, colormap(gray)
 ```
 
 ### Creating a custom reconstruction/analysis module
-The MRD server has a modular design to allow for easy integration of custom reconstruction or image analysis code.  In this example, a high-pass filter is applied to images.
+The MRD server has a modular design to allow for easy integration of custom reconstruction or image analysis code.  
 
-1. Create a copy of [invertcontrast.py](invertcontrast.py) named ``filterimage.py``.  For other workflows, it may be preferable to start with another example such as [simplefft.py](simplefft.py) or [analyzeflow.py](analyzeflow.py).
+#### Adding a raw k-space filter
+In this example, a Hanning filter is applied to raw k-space data.
 
-2. The Python [Pillow](https://github.com/python-pillow/Pillow/) library contains a high-pass filter named [FIND_EDGES](https://pythontic.com/image-processing/pillow/edge-detection).  Add the following line to the top of the newly created ``filterimage.py`` to import this library:
-    ```
-    from PIL import Image, ImageFilter
-    ```
+1. Create a copy of [invertcontrast.py](invertcontrast.py) named ``filterkspace.py``.  For other workflows, it may be preferable to start with another example such as [simplefft.py](simplefft.py).
 
-3. In the ``process_image()`` function the ``filterimage.py`` file, find the sections where the incoming images are being [normalized](https://github.com/kspaceKelvin/python-ismrmrd-server/blob/6684b4d17c0591e64b34bc06fdd06d78a2d8c659/invertcontrast.py#L261) and [filtered](https://github.com/kspaceKelvin/python-ismrmrd-server/blob/6684b4d17c0591e64b34bc06fdd06d78a2d8c659/invertcontrast.py#L267). The Pillow image filters require images with values in the range 0-255, so replace these two sections as follows:
+1. The NumPy library contains a [Hanning filter](https://numpy.org/doc/stable/reference/generated/numpy.hanning.html) that can be applied to k-space data before the Fourier transform.
+
+1. In the ``process_raw()`` function the ``filterkspace.py`` file, find the [section where raw k-space data is already sorted into a Cartesian grid, just prior to Fourier transform](https://github.com/kspaceKelvin/python-ismrmrd-server/blob/27454bd9f1a2c7fd3928bfa0767840b0d015d988/invertcontrast.py#L177).  Add a Hanning filter and perform element-wise multiplication of the k-space data with the filter:
 
     **Old code:**
     ```
-        # Normalize and convert to int16
-        data = data.astype(np.float64)
-        data *= 32767/data.max()
-        data = np.around(data)
-        data = data.astype(np.int16)
-
-        # Invert image contrast
-        data = 32767-data
-        data = np.abs(data)
-        data = data.astype(np.int16)
-        np.save(debugFolder + "/" + "imgInverted.npy", data)
+    # Fourier Transform
+    data = fft.fftshift( data, axes=(1, 2))
+    data = fft.ifft2(    data, axes=(1, 2))
+    data = fft.ifftshift(data, axes=(1, 2))
     ```
 
     **New code:**
     ```
-        # Normalize to range 0-255
-        data = data.astype(np.float64)
-        data *= 255/data.max()
+    # Apply Hanning filter
+    logging.info("Applying Hanning filter to k-space data")
+    filt = np.sqrt(np.outer(np.hanning(data.shape[1]), np.hanning(data.shape[2])))
+    filt = np.expand_dims(filt, axis=(0,3))
+    data = np.multiply(data,filt)
+    np.save(debugFolder + "/" + "rawFilt.npy", data)
 
-        # Apply a 2D high-pass filter for each image
-        from PIL import Image, ImageFilter
-        for iImg in range(data.shape[-1]):
-            im = Image.fromarray(np.squeeze(data[...,iImg])).convert('RGB')
-            im = im.filter(ImageFilter.FIND_EDGES)
-            data[:,:,0,0,iImg] = np.asarray(im)[...,0]
-
-        # Rescale back to 16-bit
-        data = data * 32767.0/data.max()
-        data = data.astype(np.int16)
-        np.save(debugFolder + "/" + "imgFiltered.npy", data)
+    # Fourier Transform
+    data = fft.fftshift( data, axes=(1, 2))
+    data = fft.ifft2(    data, axes=(1, 2))
+    data = fft.ifftshift(data, axes=(1, 2))
     ```
 
-4. The module used by the server is specified by the ``config`` option on the client side.  The Server class used in this code [attempts to find](https://github.com/kspaceKelvin/python-ismrmrd-server/blob/6684b4d17c0591e64b34bc06fdd06d78a2d8c659/server.py#L105) a Python module matching the name of the config file if it doesn't match one of the default examples.  [Start the server](https://github.com/kspaceKelvin/python-ismrmrd-server#reconstruct-a-phantom-raw-data-set-using-the-mrd-clientserver-pair) and in a separate window, run the client with the ``-c filterimage`` option to specify the new config:
+1. The module used by the server is specified by the ``config`` option on the client side.  The Server class used in this code [attempts to find](https://github.com/kspaceKelvin/python-ismrmrd-server/blob/6684b4d17c0591e64b34bc06fdd06d78a2d8c659/server.py#L105) a Python module matching the name of the config file if it doesn't match one of the default examples.  [Start the server](https://github.com/kspaceKelvin/python-ismrmrd-server#reconstruct-a-phantom-raw-data-set-using-the-mrd-clientserver-pair) and in a separate window, run the client with the ``-c filterkspace`` option to specify the new config:
+    ```
+    python3 client.py -c filterkspace -o phantom_img.h5 phantom_raw.h5
+    ```
+
+1. Create a GIF preview of the filtered image:
+    ```
+    python3 mrd2gif.py phantom_img.h5
+    ```
+
+#### Adding an image processing filter
+In this example, a high-pass filter is applied to images.
+
+1. Create a copy of [invertcontrast.py](invertcontrast.py) named ``filterimage.py``.  For other workflows, it may be preferable to start with another example such as [analyzeflow.py](analyzeflow.py).
+
+1. The Python [Pillow](https://github.com/python-pillow/Pillow/) library contains a high-pass filter named [FIND_EDGES](https://pythontic.com/image-processing/pillow/edge-detection).  Add the following line to the top of the newly created ``filterimage.py`` to import this library:
+    ```
+    from PIL import Image, ImageFilter
+    ```
+
+1. In the ``process_image()`` function the ``filterimage.py`` file, find the sections where the incoming images are being [normalized](https://github.com/kspaceKelvin/python-ismrmrd-server/blob/6684b4d17c0591e64b34bc06fdd06d78a2d8c659/invertcontrast.py#L261) and [filtered](https://github.com/kspaceKelvin/python-ismrmrd-server/blob/6684b4d17c0591e64b34bc06fdd06d78a2d8c659/invertcontrast.py#L267). The Pillow image filters require images with values in the range 0-255, so replace these two sections as follows:
+
+    **Old code:**
+    ```
+    # Normalize and convert to int16
+    data = data.astype(np.float64)
+    data *= 32767/data.max()
+    data = np.around(data)
+    data = data.astype(np.int16)
+
+    # Invert image contrast
+    data = 32767-data
+    data = np.abs(data)
+    data = data.astype(np.int16)
+    np.save(debugFolder + "/" + "imgInverted.npy", data)
+    ```
+
+    **New code:**
+    ```
+    # Normalize to range 0-255
+    data = data.astype(np.float64)
+    data *= 255/data.max()
+
+    # Apply a 2D high-pass filter for each image
+    logging.info("Applying high-pass image filter")
+    from PIL import Image, ImageFilter
+    for iImg in range(data.shape[-1]):
+        im = Image.fromarray(np.squeeze(data[...,iImg])).convert('RGB')
+        im = im.filter(ImageFilter.FIND_EDGES)
+        data[:,:,0,0,iImg] = np.asarray(im)[...,0]
+
+    # Rescale back to 16-bit
+    data = data * 32767.0/data.max()
+    data = data.astype(np.int16)
+    np.save(debugFolder + "/" + "imgFiltered.npy", data)
+    ```
+
+1. The module used by the server is specified by the ``config`` option on the client side.  The Server class used in this code [attempts to find](https://github.com/kspaceKelvin/python-ismrmrd-server/blob/6684b4d17c0591e64b34bc06fdd06d78a2d8c659/server.py#L105) a Python module matching the name of the config file if it doesn't match one of the default examples.  [Start the server](https://github.com/kspaceKelvin/python-ismrmrd-server#reconstruct-a-phantom-raw-data-set-using-the-mrd-clientserver-pair) and in a separate window, run the client with the ``-c filterimage`` option to specify the new config:
     ```
     python3 client.py -c filterimage -o phantom_img.h5 phantom_raw.h5
+    ```
+
+1. Create a GIF preview of the filtered image:
+    ```
+    python3 mrd2gif.py phantom_img.h5
     ```
 
 ### Using raw data from an MRI scanner
@@ -115,7 +166,7 @@ For Siemens data, raw data in .dat format can be converted and processed as foll
 
     If the input file is a multi-RAID file, then several output files are created such as ``gre_raw_1.h5`` and ``gre_raw_2.h5``.  The first measurements are dependency data while the main acquisition is in the last numbered file.
 
-2. [Start the server](https://github.com/kspaceKelvin/python-ismrmrd-server#reconstruct-a-phantom-raw-data-set-using-the-mrd-clientserver-pair) and in a separate window, run the client using the converted file:
+1. [Start the server](https://github.com/kspaceKelvin/python-ismrmrd-server#reconstruct-a-phantom-raw-data-set-using-the-mrd-clientserver-pair) and in a separate window, run the client using the converted file:
     ```
     python3 client.py -c invertcontrast -o gre_img.h5 gre_raw_2.h5
     ```
@@ -123,17 +174,17 @@ For Siemens data, raw data in .dat format can be converted and processed as foll
     Note that the invertcontrast example module only does basic Fourier transform reconstruction and does not support undersampling or more complex acquisitions.
 
 ### Using DICOM images as input data
-For image processing workflows, DICOM images can be used by converting them into MRD format.  The [dicom2mrd.py] script can be used to convert data in this manner.
+For image processing workflows, DICOM images can be used by converting them into MRD format.  The [dicom2mrd.py](dicom2mrd.py) script can be used to convert data in this manner.
 
 1. Create a folder containing DICOM files with file extensions .ima or .dcm.  Files can also be organized in sub-folders if desired.
 
-2. Run the dicom2mrd conversion script:
+1. Run the dicom2mrd conversion script:
     ```
     python3 dicom2mrd.py -o dicom_img.h5 dicoms
     ```
     Where the DICOM files are in a folder called ``dicoms`` and an output file ``dicom_img.h5`` is created containing the MRD formatted images.
 
-2. [Start the server](https://github.com/kspaceKelvin/python-ismrmrd-server#reconstruct-a-phantom-raw-data-set-using-the-mrd-clientserver-pair) and in a separate window, run the client using the converted file:
+1. [Start the server](https://github.com/kspaceKelvin/python-ismrmrd-server#reconstruct-a-phantom-raw-data-set-using-the-mrd-clientserver-pair) and in a separate window, run the client using the converted file:
     ```
     python3 client.py -c invertcontrast -o dicom_img_inverted.h5 dicom_img.h5
     ```
