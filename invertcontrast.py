@@ -166,6 +166,14 @@ def process_raw(group, connection, config, metadata):
     logging.debug("Raw data is size %s" % (data.shape,))
     np.save(debugFolder + "/" + "raw.npy", data)
 
+    # Remove readout oversampling
+    data = fft.ifft(data, axis=2)
+    data = np.delete(data, np.arange(int(data.shape[2]*1/4),int(data.shape[2]*3/4)), 2)
+    data = fft.fft( data, axis=2)
+
+    logging.debug("Raw data is size after readout oversampling removal %s" % (data.shape,))
+    np.save(debugFolder + "/" + "rawNoOS.npy", data)
+
     # Fourier Transform
     data = fft.fftshift( data, axes=(1, 2))
     data = fft.ifft2(    data, axes=(1, 2))
