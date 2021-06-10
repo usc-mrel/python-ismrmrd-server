@@ -8,7 +8,7 @@ RUN  mkdir -p /opt/code
 
 # BART (static linked)
 RUN cd /opt/code                                   && \
-    git clone https://github.com/mrirecon/bart.git && \
+    git clone https://github.com/mrirecon/bart.git --branch v0.7.00 && \
     cd bart                                        && \
     make SLINK=1 -j $(nproc)                       && \
     make install
