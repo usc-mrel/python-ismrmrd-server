@@ -123,6 +123,7 @@ class Connection:
         config_file = constants.MrdMessageConfigurationFile.unpack(config_file_bytes)[0].decode("utf-8")
         config_file = config_file.split('\x00',1)[0]  # Strip off null terminators in fixed 1024 size
 
+        logging.debug("    " + config_file)
         if (config_file == "savedataonly"):
             logging.info("Save data, but no processing based on config")
             if self.savedata is True:

@@ -155,7 +155,7 @@ def main(args):
     # --------------- Send config -----------------------------
     if (args.config_local):
         fid = open(args.config_local, "r")
-        config_text = fid.read().decode("utf-8")
+        config_text = fid.read()
         fid.close()
         logging.info("Sending local config file '%s' with text:", args.config_local)
         logging.info(config_text)
