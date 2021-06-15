@@ -177,6 +177,9 @@ def main(args):
             except:
                 pass
 
+            # Remove pixel data from pydicom class
+            del tmpDset['PixelData']
+
             # Store the complete base64, json-formatted DICOM header so that non-MRD fields can be
             # recapitulated when generating DICOMs from MRD images
             tmpMeta['DicomJson'] = base64.b64encode(tmpDset.to_json().encode('utf-8')).decode('utf-8')

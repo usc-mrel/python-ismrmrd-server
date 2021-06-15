@@ -174,7 +174,7 @@ For Siemens data, raw data in .dat format can be converted and processed as foll
     Note that the invertcontrast example module only does basic Fourier transform reconstruction and does not support undersampling or more complex acquisitions.
 
 ### Using DICOM images as input data
-For image processing workflows, DICOM images can be used by converting them into MRD format.  The [dicom2mrd.py](dicom2mrd.py) script can be used to convert data in this manner.
+For image processing workflows, DICOM images can be used as input by converting them into MRD format.  The [dicom2mrd.py](dicom2mrd.py) script can be used to convert DICOMs to MRD, while [mrd2dicom.py](mrd2dicom.py) can be used to perform the inverse.
 
 1. Create a folder containing DICOM files with file extensions .ima or .dcm.  Files can also be organized in sub-folders if desired.
 
@@ -187,6 +187,11 @@ For image processing workflows, DICOM images can be used by converting them into
 1. [Start the server](https://github.com/kspaceKelvin/python-ismrmrd-server#reconstruct-a-phantom-raw-data-set-using-the-mrd-clientserver-pair) and in a separate window, run the client using the converted file:
     ```
     python3 client.py -c invertcontrast -o dicom_img_inverted.h5 dicom_img.h5
+    ```
+
+1. Convert the output MRD file back to a folder of DICOMs:
+    ```
+    python3 mrd2dicom.py dicom_img_inverted.h5
     ```
 
 ## Code Design
@@ -214,9 +219,11 @@ This code is designed to provide a reference implementation of an MRD client/ser
 
 - [generate_cartesian_shepp_logan_dataset.py](generate_cartesian_shepp_logan_dataset.py): Creates an MRD raw data file of a Shepp-Logan phantom with Cartesian sampling.  Borrowed from the [ismrmrd-python-tools](https://github.com/ismrmrd/ismrmrd-python-tools) repository.
 
-- [mrd2gif.py](mrd2gif.py): This program converts an MRD image .h5 file into an animated GIF for quick previews.
-
 - [dicom2mrd.py](dicom2mrd.py): This program converts a folder of DICOM images to an MRD image .h5 file, allowing DICOM images to be use as input for MRD streaming data.
+
+- [mrd2dicom.py](mrd2dicom.py): This program converts an MRD image .h5 file to a folder of DICOM images.
+
+- [mrd2gif.py](mrd2gif.py): This program converts an MRD image .h5 file into an animated GIF for quick previews.
 
 ## Saving incoming data
 It may be desirable for the MRD server to save a copy of incoming data from the client.  For example, if the client is an MRI scanner, then the saved data can be used for offline simulations at a later time.  This may be particularly useful when the MRI scanner client is sending image data, as images are not stored in a scanner's raw data file and would otherwise require offline simulation of the MRI scanner reconstruction as well.
