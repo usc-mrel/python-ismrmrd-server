@@ -1,5 +1,23 @@
-## Getting Started
-### Reconstruct a phantom raw data set using the MRD client/server pair
+##  Table of Contents
+<!-- vscode-markdown-toc -->
+* 1. [Getting Started](#GettingStarted)
+	* 1.1. [Reconstruct a phantom raw data set using the MRD client/server pair](#ReconstructaphantomrawdatasetusingtheMRDclientserverpair)
+	* 1.2. [Creating a custom reconstruction/analysis module](#Creatingacustomreconstructionanalysismodule)
+		* 1.2.1. [Adding a raw k-space filter](#Addingarawk-spacefilter)
+		* 1.2.2. [Adding an image processing filter](#Addinganimageprocessingfilter)
+	* 1.3. [Using raw data from an MRI scanner](#UsingrawdatafromanMRIscanner)
+	* 1.4. [Using DICOM images as input data](#UsingDICOMimagesasinputdata)
+* 2. [Code Design](#CodeDesign)
+* 3. [Saving incoming data](#Savingincomingdata)
+* 4. [Startup scripts](#Startupscripts)
+
+<!-- vscode-markdown-toc-config
+	numbering=true
+	autoSave=true
+	/vscode-markdown-toc-config -->
+<!-- /vscode-markdown-toc -->
+##  1. <a name='GettingStarted'></a>Getting Started
+###  1.1. <a name='ReconstructaphantomrawdatasetusingtheMRDclientserverpair'></a>Reconstruct a phantom raw data set using the MRD client/server pair
 In a command prompt, generate a sample raw dataset:
 ```
 python3 generate_cartesian_shepp_logan_dataset.py -o phantom_raw.h5
@@ -46,10 +64,10 @@ img = h5read('/tmp/phantom_img.h5', '/dataset/2020-06-26 16:37.157291/data');
 figure, imagesc(img), axis image, colormap(gray)
 ```
 
-### Creating a custom reconstruction/analysis module
+###  1.2. <a name='Creatingacustomreconstructionanalysismodule'></a>Creating a custom reconstruction/analysis module
 The MRD server has a modular design to allow for easy integration of custom reconstruction or image analysis code.  
 
-#### Adding a raw k-space filter
+####  1.2.1. <a name='Addingarawk-spacefilter'></a>Adding a raw k-space filter
 In this example, a Hanning filter is applied to raw k-space data.
 
 1. Create a copy of [invertcontrast.py](invertcontrast.py) named ``filterkspace.py``.  For other workflows, it may be preferable to start with another example such as [simplefft.py](simplefft.py).
@@ -81,7 +99,7 @@ In this example, a Hanning filter is applied to raw k-space data.
     data = fft.ifftshift(data, axes=(1, 2))
     ```
 
-1. The module used by the server is specified by the ``config`` option on the client side.  The Server class used in this code [attempts to find](https://github.com/kspaceKelvin/python-ismrmrd-server/blob/6684b4d17c0591e64b34bc06fdd06d78a2d8c659/server.py#L105) a Python module matching the name of the config file if it doesn't match one of the default examples.  [Start the server](https://github.com/kspaceKelvin/python-ismrmrd-server#reconstruct-a-phantom-raw-data-set-using-the-mrd-clientserver-pair) and in a separate window, run the client with the ``-c filterkspace`` option to specify the new config:
+1. The module used by the server is specified by the ``config`` option on the client side.  The Server class used in this code [attempts to find](https://github.com/kspaceKelvin/python-ismrmrd-server/blob/6684b4d17c0591e64b34bc06fdd06d78a2d8c659/server.py#L105) a Python module matching the name of the config file if it doesn't match one of the default examples.  [Start the server](https://github.com/kspaceKelvin/python-ismrmrd-server#ReconstructaphantomrawdatasetusingtheMRDclientserverpair) and in a separate window, run the client with the ``-c filterkspace`` option to specify the new config:
     ```
     python3 client.py -c filterkspace -o phantom_img.h5 phantom_raw.h5
     ```
@@ -91,7 +109,7 @@ In this example, a Hanning filter is applied to raw k-space data.
     python3 mrd2gif.py phantom_img.h5
     ```
 
-#### Adding an image processing filter
+####  1.2.2. <a name='Addinganimageprocessingfilter'></a>Adding an image processing filter
 In this example, a high-pass filter is applied to images.
 
 1. Create a copy of [invertcontrast.py](invertcontrast.py) named ``filterimage.py``.  For other workflows, it may be preferable to start with another example such as [analyzeflow.py](analyzeflow.py).
@@ -138,7 +156,7 @@ In this example, a high-pass filter is applied to images.
     np.save(debugFolder + "/" + "imgFiltered.npy", data)
     ```
 
-1. The module used by the server is specified by the ``config`` option on the client side.  The Server class used in this code [attempts to find](https://github.com/kspaceKelvin/python-ismrmrd-server/blob/6684b4d17c0591e64b34bc06fdd06d78a2d8c659/server.py#L105) a Python module matching the name of the config file if it doesn't match one of the default examples.  [Start the server](https://github.com/kspaceKelvin/python-ismrmrd-server#reconstruct-a-phantom-raw-data-set-using-the-mrd-clientserver-pair) and in a separate window, run the client with the ``-c filterimage`` option to specify the new config:
+1. The module used by the server is specified by the ``config`` option on the client side.  The Server class used in this code [attempts to find](https://github.com/kspaceKelvin/python-ismrmrd-server/blob/6684b4d17c0591e64b34bc06fdd06d78a2d8c659/server.py#L105) a Python module matching the name of the config file if it doesn't match one of the default examples.  [Start the server](https://github.com/kspaceKelvin/python-ismrmrd-server#ReconstructaphantomrawdatasetusingtheMRDclientserverpair) and in a separate window, run the client with the ``-c filterimage`` option to specify the new config:
     ```
     python3 client.py -c filterimage -o phantom_img.h5 phantom_raw.h5
     ```
@@ -148,7 +166,7 @@ In this example, a high-pass filter is applied to images.
     python3 mrd2gif.py phantom_img.h5
     ```
 
-### Using raw data from an MRI scanner
+###  1.3. <a name='UsingrawdatafromanMRIscanner'></a>Using raw data from an MRI scanner
 Raw data from MRI scanners can be converted into MRD format using publicly available conversion tools such as [siemens_to_ismrmrd](https://github.com/ismrmrd/siemens_to_ismrmrd), [ge_to_ismrmrd](https://github.com/ismrmrd/ge_to_ismrmrd), [philips_to_ismrmrd](https://github.com/ismrmrd/philips_to_ismrmrd), and [bruker_to_ismrmrd](https://github.com/ismrmrd/bruker_to_ismrmrd).  These can be used as input data for the client as part of streaming MRD framework.
 
 For Siemens data, raw data in .dat format can be converted and processed as follows:
@@ -166,14 +184,14 @@ For Siemens data, raw data in .dat format can be converted and processed as foll
 
     If the input file is a multi-RAID file, then several output files are created such as ``gre_raw_1.h5`` and ``gre_raw_2.h5``.  The first measurements are dependency data while the main acquisition is in the last numbered file.
 
-1. [Start the server](https://github.com/kspaceKelvin/python-ismrmrd-server#reconstruct-a-phantom-raw-data-set-using-the-mrd-clientserver-pair) and in a separate window, run the client using the converted file:
+1. [Start the server](https://github.com/kspaceKelvin/python-ismrmrd-server#ReconstructaphantomrawdatasetusingtheMRDclientserverpair) and in a separate window, run the client using the converted file:
     ```
     python3 client.py -c invertcontrast -o gre_img.h5 gre_raw_2.h5
     ```
 
     Note that the invertcontrast example module only does basic Fourier transform reconstruction and does not support undersampling or more complex acquisitions.
 
-### Using DICOM images as input data
+###  1.4. <a name='UsingDICOMimagesasinputdata'></a>Using DICOM images as input data
 For image processing workflows, DICOM images can be used as input by converting them into MRD format.  The [dicom2mrd.py](dicom2mrd.py) script can be used to convert DICOMs to MRD, while [mrd2dicom.py](mrd2dicom.py) can be used to perform the inverse.
 
 1. Create a folder containing DICOM files with file extensions .ima or .dcm.  Files can also be organized in sub-folders if desired.
@@ -184,7 +202,7 @@ For image processing workflows, DICOM images can be used as input by converting 
     ```
     Where the DICOM files are in a folder called ``dicoms`` and an output file ``dicom_img.h5`` is created containing the MRD formatted images.
 
-1. [Start the server](https://github.com/kspaceKelvin/python-ismrmrd-server#reconstruct-a-phantom-raw-data-set-using-the-mrd-clientserver-pair) and in a separate window, run the client using the converted file:
+1. [Start the server](https://github.com/kspaceKelvin/python-ismrmrd-server#ReconstructaphantomrawdatasetusingtheMRDclientserverpair) and in a separate window, run the client using the converted file:
     ```
     python3 client.py -c invertcontrast -o dicom_img_inverted.h5 dicom_img.h5
     ```
@@ -194,7 +212,7 @@ For image processing workflows, DICOM images can be used as input by converting 
     python3 mrd2dicom.py dicom_img_inverted.h5
     ```
 
-## Code Design
+##  2. <a name='CodeDesign'></a>Code Design
 This code is designed to provide a reference implementation of an MRD client/server pair.  It is modular and can be easily extended to include additional reconstruction/analysis programs.
 
 - [main.py](main.py):  This is the main program, parsing input arguments and starting a "Server" class instance.
@@ -225,7 +243,7 @@ This code is designed to provide a reference implementation of an MRD client/ser
 
 - [mrd2gif.py](mrd2gif.py): This program converts an MRD image .h5 file into an animated GIF for quick previews.
 
-## Saving incoming data
+##  3. <a name='Savingincomingdata'></a>Saving incoming data
 It may be desirable for the MRD server to save a copy of incoming data from the client.  For example, if the client is an MRI scanner, then the saved data can be used for offline simulations at a later time.  This may be particularly useful when the MRI scanner client is sending image data, as images are not stored in a scanner's raw data file and would otherwise require offline simulation of the MRI scanner reconstruction as well.
 
 The feature may be turned on by starting the server with the ``-s`` option (disabled by default).  Data files are named by the current date/time and stored in ``/tmp/share/saved_data``.  The saved data folder can be changed using the ``-S`` option.  For example, to turn on saving of incoming data in the ``/tmp`` folder, start the server with:
@@ -239,7 +257,7 @@ Alternatively, this feature can be enabled on a per-session basis when the clien
 
 The resulting saved data files are in MRD .h5 format and can be used as input for ``client.py`` as detailed above.
 
-## Startup scripts
+##  4. <a name='Startupscripts'></a>Startup scripts
 There are three scripts that may be useful when starting the Python server in a chroot environment (i.e. on the scanner).  When using this server with FIRE, the startup script is specified in the fire.ini file as ``chroot_command``.  The scripts are:
 
 - [start-fire-python-server.sh](start-fire-python-server.sh):  This script takes one optional argument, which is the location of a log file.  If not provided, logging outputs are discarded.
