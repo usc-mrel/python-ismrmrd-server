@@ -158,9 +158,9 @@ def main(args):
             tmpMrdImg.read_dir                 = tuple(np.stack(tmpDset.ImageOrientationPatient[0:3]))
             tmpMrdImg.phase_dir                = tuple(np.stack(tmpDset.ImageOrientationPatient[3:7]))
             tmpMrdImg.slice_dir                = tuple(np.cross(np.stack(tmpDset.ImageOrientationPatient[0:3]), np.stack(tmpDset.ImageOrientationPatient[3:7])))
-            tmpMrdImg.acquisition_time_stamp   = round((int(tmpDset.AcquisitionTime[0:2])*3600 + int(tmpDset.AcquisitionTime[2:4])*60 + int(tmpDset.AcquisitionTime[4:6]) + float(tmpDset.AcquisitionTime[6:]))*1000*2.5)
+            tmpMrdImg.acquisition_time_stamp   = round((int(tmpDset.AcquisitionTime[0:2])*3600 + int(tmpDset.AcquisitionTime[2:4])*60 + int(tmpDset.AcquisitionTime[4:6]) + float(tmpDset.AcquisitionTime[6:]))*1000/2.5)
             try:
-                tmpMrdImg.physiology_time_stamp[0] = round(int(tmpDset.TriggerTime*2.5))
+                tmpMrdImg.physiology_time_stamp[0] = round(int(tmpDset.TriggerTime/2.5))
             except:
                 pass
 
@@ -183,9 +183,12 @@ def main(args):
                 venc = re.search(r'^\d+',           res.group(0))
                 dir  = re.search(r'(?<=\d)[^\d]*$', res.group(0))
 
+                tmpMeta['FlowVelocity']   = float(venc.group(0))
                 tmpMeta['FlowDirDisplay'] = venc_dir_map[dir.group(0)]
             except:
                 pass
+
+            tmpMeta['SequenceDescription'] = tmpDset.SeriesDescription
 
             # Remove pixel data from pydicom class
             del tmpDset['PixelData']
