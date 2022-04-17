@@ -1,8 +1,10 @@
 import ismrmrd
 import os
 import logging
+import traceback
 import numpy as np
 import ctypes
+import constants
 import mrdhelper
 import tempfile
 from bart import bart
@@ -81,6 +83,10 @@ def process(connection, config, metadata):
             image = process_raw(acqGroup, config, metadata)
             connection.send_image(image)
             acqGroup = []
+
+    except Exception as e:
+        logging.error(traceback.format_exc())
+        connection.send_logging(constants.MRD_LOGGING_ERROR, traceback.format_exc())
 
     finally:
         connection.send_close()

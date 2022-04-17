@@ -1,8 +1,8 @@
-
 import ismrmrd
 import os
 import itertools
 import logging
+import traceback
 import numpy as np
 import numpy.fft as fft
 import xml.dom.minidom
@@ -125,6 +125,10 @@ def process(connection, config, metadata):
             image = process_image(imgGroup, connection, config, metadata)
             connection.send_image(image)
             imgGroup = []
+
+    except Exception as e:
+        logging.error(traceback.format_exc())
+        connection.send_logging(constants.MRD_LOGGING_ERROR, traceback.format_exc())
 
     finally:
         connection.send_close()
