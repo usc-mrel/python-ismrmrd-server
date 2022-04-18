@@ -165,10 +165,10 @@ def process_raw(group, config, metadata):
     imagesOut = []
     for phs in range(data.shape[2]):
         # Create new MRD instance for the processed image
-        # NOTE: from_array() takes input data as [x y z coil], which is
-        # different than the internal representation in the "data" field as
-        # [coil z y x], so we need to transpose
-        tmpImg = ismrmrd.Image.from_array(data[...,phs].transpose())
+        # data has shape [PE RO phs], i.e. [y x].
+        # from_array() should be called with 'transpose=False' to avoid warnings, and when called
+        # with this option, can take input as: [cha z y x], [z y x], or [y x]
+        tmpImg = ismrmrd.Image.from_array(data[...,phs], transpose=False)
 
         # Set the header information
         tmpImg.setHead(mrdhelper.update_img_header_from_raw(tmpImg.getHead(), rawHead[phs]))
