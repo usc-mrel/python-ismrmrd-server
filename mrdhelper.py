@@ -1,6 +1,7 @@
 # MRD Helper functions
 import ismrmrd
 import re
+import base64
 
 def update_img_header_from_raw(imgHead, rawHead):
     """Populate ImageHeader fields from AcquisitionHeader"""
@@ -47,6 +48,34 @@ def update_img_header_from_raw(imgHead, rawHead):
     imgHead.user_int               = rawHead.user_int
 
     return imgHead
+
+def get_userParameterLong_value(metadata, name):
+    """Get a value from MRD Header userParameterLong (returns None if key not found)"""
+    for param in metadata.userParameters.userParameterLong:
+        if param.name == name:
+            return int(param.value)
+    return None
+
+def get_userParameterDouble_value(metadata, name):
+    """Get a value from MRD Header userParameterDouble (returns None if key not found)"""
+    for param in metadata.userParameters.userParameterDouble:
+        if param.name == name:
+            return float(param.value)
+    return None
+
+def get_userParameterString_value(metadata, name):
+    """Get a value from MRD Header userParameterDouble (returns None if key not found)"""
+    for param in metadata.userParameters.userParameterDouble:
+        if param.name == name:
+            return float(param.value)
+    return None
+
+def get_userParameterBase64_value(metadata, name):
+    """Get a value from MRD Header userParameterBase64 (returns None if key not found)"""
+    for param in metadata.userParameters.userParameterBase64:
+        if param.name == name:
+            return base64.b64decode(param.value).decode('utf-8')
+    return None
 
 def get_meta_value(meta, key):
     """Get a value from MRD Meta Attributes (returns None if key not found)"""
