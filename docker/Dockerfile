@@ -6,11 +6,11 @@ ENV  TZ=America/Chicago
 RUN  apt-get update && apt-get install -y git cmake g++ libhdf5-dev libxml2-dev libxslt1-dev libboost-all-dev libfftw3-dev
 RUN  mkdir -p /opt/code
 
-# ISMRMRD library
+# ISMRMRD library (1.12.0)
 RUN cd /opt/code && \
     git clone https://github.com/ismrmrd/ismrmrd.git && \
     cd ismrmrd && \
-    git checkout v1.7.1 && \
+    git checkout f9e38ed8cda6428839005c060579d3dfdb043515 && \
     mkdir build && \
     cd build && \
     cmake ../ && \
@@ -21,7 +21,7 @@ RUN cd /opt/code && \
 RUN cd /opt/code && \
     git clone https://github.com/ismrmrd/siemens_to_ismrmrd.git && \
     cd siemens_to_ismrmrd && \
-    git checkout v1.2.2 && \
+    git checkout v1.2.6 && \
     mkdir build && \
     cd build && \
     cmake ../ && \
@@ -53,7 +53,7 @@ RUN apt-get update && apt-get install --no-install-recommends -y libxslt1.1 libh
 RUN mkdir -p /opt/code
 
 # Python MRD library
-RUN pip3 install ismrmrd==1.9.6
+RUN pip3 install h5py ismrmrd==1.13.1
 
 RUN  cd /opt/code \
      && git clone https://github.com/ismrmrd/ismrmrd-python-tools.git \
