@@ -100,6 +100,9 @@ def process(connection, config, metadata):
         connection.send_close()
 
 def process_image(images, connection, config, metadata):
+    if len(images) == 0:
+        return []
+
     # Start timer
     tic = perf_counter()
 

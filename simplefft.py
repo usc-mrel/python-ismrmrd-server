@@ -52,6 +52,9 @@ def process(connection, config, metadata):
 
 
 def process_group(group, config, metadata):
+    if len(group) == 0:
+        return []
+
     # Create folder, if necessary
     if not os.path.exists(debugFolder):
         os.makedirs(debugFolder)

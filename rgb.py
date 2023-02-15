@@ -75,6 +75,9 @@ def process(connection, config, metadata):
         connection.send_close()
 
 def process_raw(group, config, metadata):
+    if len(group) == 0:
+        return []
+
     # Create folder, if necessary
     if not os.path.exists(debugFolder):
         os.makedirs(debugFolder)
@@ -174,6 +177,9 @@ def process_raw(group, config, metadata):
     return imagesOut
 
 def process_image(images, config, metadata):
+    if len(images) == 0:
+        return []
+
     # Create folder, if necessary
     if not os.path.exists(debugFolder):
         os.makedirs(debugFolder)

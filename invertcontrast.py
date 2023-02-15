@@ -135,6 +135,9 @@ def process(connection, config, metadata):
 
 
 def process_raw(group, connection, config, metadata):
+    if len(group) == 0:
+        return []
+
     # Start timer
     tic = perf_counter()
 
@@ -254,6 +257,9 @@ def process_raw(group, connection, config, metadata):
 
 
 def process_image(images, connection, config, metadata):
+    if len(images) == 0:
+        return []
+
     # Create folder, if necessary
     if not os.path.exists(debugFolder):
         os.makedirs(debugFolder)
