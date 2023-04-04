@@ -7,6 +7,9 @@ import numpy as np
 import argparse
 
 def create(filename='testdata.h5', matrix_size=256, coils=8, oversampling=2, repetitions=1, acceleration=1, noise_level=0.05):
+    print("Creating Shepp-Logan phantom raw data:")
+    print("Matrix %dx%d at R=%d with %d repetitions" % (matrix_size, matrix_size, acceleration, repetitions))
+    print("%d coils with %d oversampling and %1.2f noise level" % (coils, oversampling, noise_level))
 
     # Generate the phantom and coil sensitivity maps
     phan = simulation.phantom(matrix_size)
@@ -164,7 +167,7 @@ def create(filename='testdata.h5', matrix_size=256, coils=8, oversampling=2, rep
 
     # Clean up
     dset.close()
-
+    print("Saved to %s" % (filename))
 
 def main():
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)

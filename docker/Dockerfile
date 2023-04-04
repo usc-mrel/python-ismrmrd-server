@@ -3,14 +3,14 @@ FROM python:3.10.2-slim AS mrd_converter
 ARG  DEBIAN_FRONTEND=noninteractive
 ENV  TZ=America/Chicago
 
-RUN  apt-get update && apt-get install -y git cmake g++ libhdf5-dev libxml2-dev libxslt1-dev libboost-all-dev libfftw3-dev
+RUN  apt-get update && apt-get install -y git cmake g++ libhdf5-dev libxml2-dev libxslt1-dev libboost-all-dev libfftw3-dev libpugixml-dev
 RUN  mkdir -p /opt/code
 
-# ISMRMRD library (1.12.0)
+# ISMRMRD library
 RUN cd /opt/code && \
     git clone https://github.com/ismrmrd/ismrmrd.git && \
     cd ismrmrd && \
-    git checkout f9e38ed8cda6428839005c060579d3dfdb043515 && \
+    git checkout v1.13.4 && \
     mkdir build && \
     cd build && \
     cmake ../ && \
@@ -21,7 +21,7 @@ RUN cd /opt/code && \
 RUN cd /opt/code && \
     git clone https://github.com/ismrmrd/siemens_to_ismrmrd.git && \
     cd siemens_to_ismrmrd && \
-    git checkout v1.2.6 && \
+    git checkout v1.2.10 && \
     mkdir build && \
     cd build && \
     cmake ../ && \
