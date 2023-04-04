@@ -139,7 +139,25 @@ def main(args):
     # Spawn a thread to connect and handle incoming data
     logging.info("Connecting to MRD server at %s:%d" % (args.address, args.port))
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.connect((args.address, args.port))
+
+    attempt     = 0
+    maxAttempts = 5
+    success     = False
+    while attempt < maxAttempts:
+        try:
+            sock.connect((args.address, args.port))
+        except socket.error as error:
+            logging.warning("Failed to connect (%d/%d): %s" % (attempt+1, maxAttempts, error))
+            time.sleep(1)
+            attempt += 1
+        else:
+            success = True
+            attempt = maxAttempts
+
+    if not success:
+        sock.close()
+        logging.error("... Aborting")
+        return
 
     recvAcqs      = multiprocessing.Value('i', 0)
     recvImages    = multiprocessing.Value('i', 0)
