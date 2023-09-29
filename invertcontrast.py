@@ -334,10 +334,15 @@ def process_image(images, connection, config, metadata):
         tmpMeta['WindowWidth']                    = '32768'
         tmpMeta['SequenceDescriptionAdditional']  = 'FIRE'
         tmpMeta['Keep_image_geometry']            = 1
-        # tmpMeta['ROI_example']                    = create_example_roi(data.shape)
 
-        # Example for setting colormap
-        # tmpMeta['LUTFileName']            = 'MicroDeltaHotMetal.pal'
+        if ('parameters' in config) and ('options' in config['parameters']):
+            # Example for sending ROIs
+            if config['parameters']['options'] == 'roi':
+                tmpMeta['ROI_example'] = create_example_roi(data.shape)
+
+            # Example for setting colormap
+            if config['parameters']['options'] == 'colormap':
+                tmpMeta['LUTFileName'] = 'MicroDeltaHotMetal.pal'
 
         # Add image orientation directions to MetaAttributes if not already present
         if tmpMeta.get('ImageRowDir') is None:
