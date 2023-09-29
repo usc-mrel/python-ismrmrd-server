@@ -77,6 +77,9 @@ class Connection:
     def read(self, nbytes):
         return self.socket.recv(nbytes, socket.MSG_WAITALL)
 
+    def peek(self, nbytes):
+        return self.socket.recv(nbytes, socket.MSG_PEEK)
+
     def next(self):
         with self.lock:
             id = self.read_mrd_message_identifier()
@@ -95,6 +98,20 @@ class Connection:
     def read_mrd_message_identifier(self):
         try:
             identifier_bytes = self.read(constants.SIZEOF_MRD_MESSAGE_IDENTIFIER)
+        except ConnectionResetError:
+            logging.error("Connection closed unexpectedly")
+            self.is_exhausted = True
+            return
+
+        if (len(identifier_bytes) == 0):
+            self.is_exhausted = True
+            return
+
+        return constants.MrdMessageIdentifier.unpack(identifier_bytes)[0]
+
+    def peek_mrd_message_identifier(self):
+        try:
+            identifier_bytes = self.peek(constants.SIZEOF_MRD_MESSAGE_IDENTIFIER)
         except ConnectionResetError:
             logging.error("Connection closed unexpectedly")
             self.is_exhausted = True
@@ -288,7 +305,7 @@ class Connection:
     # Message consists of:
     #   ID               (   2 bytes, unsigned short)
     #   Fixed header     ( 198 bytes, mixed         )
-    #   Attribute length (   8 bytes, uint_64       )
+    #   Attribute length (   8 bytes, uint64_t      )
     #   Attribute data   (  variable, char          )
     #   Image data       (  variable, variable      )
     def send_image(self, images):

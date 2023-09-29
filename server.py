@@ -8,6 +8,7 @@ import multiprocessing
 import ismrmrd.xsd
 import importlib
 import os
+import json
 
 import simplefft
 import invertcontrast
@@ -74,17 +75,29 @@ class Server:
                 logging.warning("Metadata is not a valid MRD XML structure.  Passing on metadata as text")
                 metadata = metadata_xml
 
+            # Support additional config parameters passed through a JSON text message
+            if connection.peek_mrd_message_identifier() == constants.MRD_MESSAGE_TEXT:
+                configAdditionalText = next(connection)
+                logging.info("Received additional config text: %s", configAdditionalText)
+                configAdditional = json.loads(configAdditionalText)
+
+                if ('parameters' in configAdditional) and ('config' in configAdditional['parameters']):
+                    logging.info("Changing config to: %s", configAdditional['parameters']['config'])
+                    config = configAdditional['parameters']['config']
+            else:
+                configAdditional = config
+
             # Decide what program to use based on config
             # If not one of these explicit cases, try to load file matching name of config
             if (config == "simplefft"):
                 logging.info("Starting simplefft processing based on config")
-                simplefft.process(connection, config, metadata)
+                simplefft.process(connection, configAdditional, metadata)
             elif (config == "invertcontrast"):
                 logging.info("Starting invertcontrast processing based on config")
-                invertcontrast.process(connection, config, metadata)
+                invertcontrast.process(connection, configAdditional, metadata)
             elif (config == "analyzeflow"):
                 logging.info("Starting analyzeflow processing based on config")
-                analyzeflow.process(connection, config, metadata)
+                analyzeflow.process(connection, configAdditional, metadata)
             elif (config == "null"):
                 logging.info("No processing based on config")
                 try:
