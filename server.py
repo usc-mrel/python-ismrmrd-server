@@ -81,9 +81,14 @@ class Server:
                 logging.info("Received additional config text: %s", configAdditionalText)
                 configAdditional = json.loads(configAdditionalText)
 
-                if ('parameters' in configAdditional) and ('config' in configAdditional['parameters']):
-                    logging.info("Changing config to: %s", configAdditional['parameters']['config'])
-                    config = configAdditional['parameters']['config']
+                if ('parameters' in configAdditional):
+                    if ('config' in configAdditional['parameters']):
+                        logging.info("Changing config to: %s", configAdditional['parameters']['config'])
+                        config = configAdditional['parameters']['config']
+
+                    if ('customconfig' in configAdditional['parameters']) and (configAdditional['parameters']['customconfig'] != ""):
+                        logging.info("Changing config to: %s", configAdditional['parameters']['customconfig'])
+                        config = configAdditional['parameters']['customconfig']
             else:
                 configAdditional = config
 
