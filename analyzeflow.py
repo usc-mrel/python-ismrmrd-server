@@ -25,7 +25,7 @@ def process(connection, config, metadata):
         # # logging.info("Metadata: \n%s", metadata.toxml('utf-8'))
 
         logging.info("Incoming dataset contains %d encodings", len(metadata.encoding))
-        logging.info("First encoding is of type '%s', with a field of view of (%s x %s x %s)mm^3 and a matrix size of (%s x %s x %s)", 
+        logging.info("First encoding is of type '%s', with a matrix size of (%s x %s x %s) and a field of view of (%s x %s x %s)mm^3", 
             metadata.encoding[0].trajectory, 
             metadata.encoding[0].encodedSpace.matrixSize.x, 
             metadata.encoding[0].encodedSpace.matrixSize.y, 
