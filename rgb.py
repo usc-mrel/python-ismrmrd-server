@@ -126,8 +126,14 @@ def process_raw(group, config, metadata):
     logging.debug("Image data is size %s" % (data.shape,))
     np.save(debugFolder + "/" + "img.npy", data)
 
+    # Determine max value (12 or 16 bit)
+    BitsStored = 12
+    if (mrdhelper.get_userParameterLong_value(metadata, "BitsStored") is not None):
+        BitsStored = mrdhelper.get_userParameterLong_value(metadata, "BitsStored")
+    maxVal = 2**BitsStored - 1
+
     # Normalize and convert to int16
-    data *= 32767/data.max()
+    data *= maxVal/data.max()
     data = np.around(data)
     data = data.astype(np.int16)
 
@@ -162,8 +168,8 @@ def process_raw(group, config, metadata):
         tmpMeta = ismrmrd.Meta()
         tmpMeta['DataRole']               = 'Image'
         tmpMeta['ImageProcessingHistory'] = ['FIRE', 'PYTHON']
-        tmpMeta['WindowCenter']           = '16384'
-        tmpMeta['WindowWidth']            = '32768'
+        tmpMeta['WindowCenter']           = str((maxVal+1)/2)
+        tmpMeta['WindowWidth']            = str((maxVal+1))
         tmpMeta['Keep_image_geometry']    = 1
 
         xml = tmpMeta.serialize()

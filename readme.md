@@ -138,12 +138,12 @@ In this example, a high-pass filter is applied to images.
     ```
     # Normalize and convert to int16
     data = data.astype(np.float64)
-    data *= 32767/data.max()
+    data *= maxVal/data.max()
     data = np.around(data)
     data = data.astype(np.int16)
 
     # Invert image contrast
-    data = 32767-data
+    data = maxVal-data
     data = np.abs(data)
     data = data.astype(np.int16)
     np.save(debugFolder + "/" + "imgInverted.npy", data)
@@ -164,7 +164,7 @@ In this example, a high-pass filter is applied to images.
         data[:,:,0,0,iImg] = np.asarray(im)[...,0]
 
     # Rescale back to 16-bit
-    data = data * 32767.0/data.max()
+    data = data * maxVal/data.max()
     data = data.astype(np.int16)
     np.save(debugFolder + "/" + "imgFiltered.npy", data)
     ```
