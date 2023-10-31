@@ -79,16 +79,19 @@ class Server:
             if connection.peek_mrd_message_identifier() == constants.MRD_MESSAGE_TEXT:
                 configAdditionalText = next(connection)
                 logging.info("Received additional config text: %s", configAdditionalText)
-                configAdditional = json.loads(configAdditionalText)
+                try:
+                    configAdditional = json.loads(configAdditionalText)
 
-                if ('parameters' in configAdditional):
-                    if ('config' in configAdditional['parameters']):
-                        logging.info("Changing config to: %s", configAdditional['parameters']['config'])
-                        config = configAdditional['parameters']['config']
+                    if ('parameters' in configAdditional):
+                        if ('config' in configAdditional['parameters']):
+                            logging.info("Changing config to: %s", configAdditional['parameters']['config'])
+                            config = configAdditional['parameters']['config']
 
-                    if ('customconfig' in configAdditional['parameters']) and (configAdditional['parameters']['customconfig'] != ""):
-                        logging.info("Changing config to: %s", configAdditional['parameters']['customconfig'])
-                        config = configAdditional['parameters']['customconfig']
+                        if ('customconfig' in configAdditional['parameters']) and (configAdditional['parameters']['customconfig'] != ""):
+                            logging.info("Changing config to: %s", configAdditional['parameters']['customconfig'])
+                            config = configAdditional['parameters']['customconfig']
+                except:
+                    logging.error("Failed to parse as JSON")
             else:
                 configAdditional = config
 
