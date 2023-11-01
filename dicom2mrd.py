@@ -103,6 +103,13 @@ def main(args):
 
     # Group by series number
     uSeriesNum = np.unique([dset.SeriesNumber for dset in dsetsAll])
+
+    # Re-group series that were split during conversion from multi-frame to single-frame DICOMs
+    if all(uSeriesNum > 1000):
+        for i in range(len(dsetsAll)):
+            dsetsAll[i].SeriesNumber = int(np.floor(dsetsAll[i].SeriesNumber / 1000))
+    uSeriesNum = np.unique([dset.SeriesNumber for dset in dsetsAll])
+
     print("Found %d unique series from %d files in folder %s" % (len(uSeriesNum), len(dsetsAll), args.folder))
 
     print("Creating MRD XML header from file %s" % dsetsAll[0].filename)
