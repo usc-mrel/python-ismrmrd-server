@@ -1,0 +1,31 @@
+{
+	"name": "python-ismrmrd-server-devcon",
+
+	"build": {
+		"dockerfile": "../docker/Dockerfile",
+		"target":     "python_mrd_devcontainer",
+		"context":    "../"
+	},
+
+	"settings": { 
+		"terminal.integrated.defaultProfile.linux": "bash"
+	},
+
+	// To enable your local GPUs in container if they are on enabled by default
+	// "runArgs": [ "--gpus=all" ],
+
+	// Use 'forwardPorts' to make a list of ports inside the container available locally.
+	"forwardPorts": [
+		9002
+	],
+
+	// Use 'postCreateCommand' to run commands after the container is created.
+	// "postCreateCommand": "uname -a",
+
+	// Add the IDs of extensions you want installed when the container is created.
+	"extensions": [
+		"ms-python.python",
+		"ms-toolsai.jupyter",
+		"ms-python.vscode-pylance"
+	]
+}
