@@ -5,7 +5,7 @@
 		"dockerfile": "../docker/Dockerfile",
 		"target":     "python_mrd_devcontainer",
 		"context":    "../",
-		"cacheFrom":  "kspacekelvin/fire-python-devcon"
+		"cacheFrom":  "docker.io/kspacekelvin/fire-python-devcon"
 	},
 
 	"settings": { 
