@@ -1,5 +1,5 @@
 # ----- 1. First stage to build ismrmrd and siemens_to_ismrmrd -----
-FROM python:3.10.2-slim AS mrd_converter
+FROM python:3.12.0-slim AS mrd_converter
 ARG  DEBIAN_FRONTEND=noninteractive
 ENV  TZ=America/Chicago
 
@@ -10,7 +10,7 @@ RUN  mkdir -p /opt/code
 RUN cd /opt/code && \
     git clone https://github.com/ismrmrd/ismrmrd.git && \
     cd ismrmrd && \
-    git checkout v1.13.4 && \
+    git checkout d364e03 && \
     mkdir build && \
     cd build && \
     cmake ../ && \
@@ -21,7 +21,7 @@ RUN cd /opt/code && \
 RUN cd /opt/code && \
     git clone https://github.com/ismrmrd/siemens_to_ismrmrd.git && \
     cd siemens_to_ismrmrd && \
-    git checkout v1.2.10 && \
+    git checkout v1.2.11 && \
     mkdir build && \
     cd build && \
     cmake ../ && \
@@ -32,7 +32,7 @@ RUN cd /opt/code && \
 RUN cd /usr/local/lib && tar -czvf libismrmrd.tar.gz libismrmrd*
 
 # ----- 2. Create a devcontainer without all of the build dependencies of MRD -----
-FROM python:3.10.2-slim AS python_mrd_devcontainer
+FROM python:3.12.0-slim AS python_mrd_devcontainer
 
 LABEL org.opencontainers.image.description="Python MRD Image Reconstruction and Analysis Server"
 LABEL org.opencontainers.image.url="https://github.com/kspaceKelvin/python-ismrmrd-server"
@@ -53,7 +53,7 @@ RUN apt-get update && apt-get install --no-install-recommends -y libxslt1.1 libh
 RUN mkdir -p /opt/code
 
 # Python MRD library
-RUN pip3 install h5py ismrmrd==1.13.1
+RUN pip3 install h5py==3.10.0 ismrmrd==1.14.0
 
 RUN cd /opt/code && \
     git clone https://github.com/ismrmrd/ismrmrd-python-tools.git && \
@@ -62,7 +62,7 @@ RUN cd /opt/code && \
 
 # matplotlib is used by rgb.py and provides various visualization tools including colormaps
 # pydicom is used by dicom2mrd.py to parse DICOM data
-RUN pip3 install --no-cache-dir matplotlib pydicom pynetdicom
+RUN pip3 install --no-cache-dir matplotlib==3.8.2 pydicom==2.4.3 pynetdicom==2.0.2
 
 # Cleanup files not required after installation
 RUN apt-get clean && \

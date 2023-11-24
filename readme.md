@@ -227,49 +227,31 @@ For image processing workflows, DICOM images can be used as input by converting 
 
 ##  2. <a name='SettingupaworkingenvironmentforthePythonMRDclientserver'></a>Setting up a working environment for the Python MRD client/server
 ###  2.1. <a name='Settingupacondaenvironment'></a>Setting up a conda environment
-Conda is a Python environment manager that is useful for creating and maintaining Python packages and their dependencies.  It is available either as part of the larger [Anaconda](https://www.anaconda.com/) product, or separately as part of [Miniconda](https://docs.conda.io/en/latest/miniconda.html).  Although not required, it's helpful in setting up an environment for the Python ISMRMD client/server.
+Conda is a Python environment manager that is useful for creating and maintaining Python packages and their dependencies.  It is available either as part of the larger [Anaconda](https://www.anaconda.com/) product, or separately as part of [Miniconda](https://docs.conda.io/en/latest/miniconda.html).  Although not required, it's helpful in setting up an environment for the Python ISMRMD client/server.  [Mamba](https://mamba.readthedocs.io/en/latest/) and [micromamba](https://mamba.readthedocs.io/en/latest/user_guide/micromamba.html) are drop-in replacements for Conda that are often faster at resolving dependencies.  The following instructions are for micromamba, but the command `micromamba` can be replaced with `conda` if conda is preferred.
 
 1. Download and install [Git](https://git-scm.com/book/en/v2/Getting-Started-Installing-Git) for your operating system.
 
-1. Download and install [Anaconda](https://www.anaconda.com/) or [Miniconda](https://docs.conda.io/en/latest/miniconda.html) for your operating system.
+1. Download and install [micromamba](https://mamba.readthedocs.io/en/latest/installation/micromamba-installation.html) or [Miniconda](https://docs.conda.io/en/latest/miniconda.html) for your operating system.
 
-1. For Windows, open "Anaconda Prompt" from the Start Menu.  In MacOS and Linux, open a standard command prompt.
-
-1. Create a new conda environment for MRD:
-    ```
-    conda create --name mrd python
-    ```
-
-1. Active the new MRD environment
-    ```
-    conda activate mrd
-    ```
-
-1. Create a directory where the Python MRD server and associated repositories should be stored and change to it in the command prompt.
-
-1. Install the ISMRMRD-Python library, which provides Python library functions for working with the MRD standard
-    ```
-    git clone https://github.com/ismrmrd/ismrmrd-python.git
-    pip3 install --no-cache-dir ./ismrmrd-python
-    ```
-
-1. Install the ISMRMRD Python Tools library, which provides additional tools for working with MRD data
-    ```
-    git clone https://github.com/ismrmrd/ismrmrd-python-tools.git
-    pip3 install --no-cache-dir ./ismrmrd-python-tools
-    ```
-
-1. Install additional dependencies used by this repository
-    ```
-    pip3 install --no-cache-dir matplotlib pydicom pynetdicom
-    ```
+1. For Windows, open a powershell prompt.  In MacOS and Linux, open a standard command prompt.
 
 1. Clone (download) this repository
     ```
     git clone https://github.com/kspaceKelvin/python-ismrmrd-server.git
     ```
 
-To use this environment in the future, open a command prompt (an Anaconda Prompt in Windows), and run ``conda activate mrd``.
+1. Change into this respository's directory and create a new conda environment for MRD using the dependencies listed in [environment.yml](environment.yml).
+    ```
+    cd python-ismrmrd-server
+    micromamba create -f environment.yml
+    ```
+
+1. Active the new MRD environment
+    ```
+    micromamba activate mrd
+    ```
+
+To use this environment in the future, open a command prompt and run ``micromamba activate mrd``.
 
 ###  2.2. <a name='SettingupaDockerenvironment'></a>Setting up a Docker environment
 [Docker](https://www.docker.com/products/docker-desktop) is a virtualization platform that allows software to run in isolated environments called containers.  It provides a convenient mechanism to package up a reconstruction program and all its libraries in a manner that can be easily deployed to other computers without manually installing dependencies or other configuration steps.  
