@@ -174,14 +174,6 @@ def process_raw(group, connection, config, metadata):
     logging.debug("Raw data is size %s" % (data.shape,))
     np.save(debugFolder + "/" + "raw.npy", data)
 
-    # Remove readout oversampling
-    data = fft.ifft(data, axis=2)
-    data = np.delete(data, np.arange(int(data.shape[2]*1/4),int(data.shape[2]*3/4)), 2)
-    data = fft.fft( data, axis=2)
-
-    logging.debug("Raw data is size after readout oversampling removal %s" % (data.shape,))
-    np.save(debugFolder + "/" + "rawNoOS.npy", data)
-
     # Fourier Transform
     data = fft.fftshift( data, axes=(1, 2))
     data = fft.ifft2(    data, axes=(1, 2))
@@ -197,17 +189,6 @@ def process_raw(group, connection, config, metadata):
 
     logging.debug("Image data is size %s" % (data.shape,))
     np.save(debugFolder + "/" + "img.npy", data)
-
-    # Determine max value (12 or 16 bit)
-    BitsStored = 12
-    if (mrdhelper.get_userParameterLong_value(metadata, "BitsStored") is not None):
-        BitsStored = mrdhelper.get_userParameterLong_value(metadata, "BitsStored")
-    maxVal = 2**BitsStored - 1
-
-    # Normalize and convert to int16
-    data *= maxVal/data.max()
-    data = np.around(data)
-    data = data.astype(np.int16)
 
     # Remove readout oversampling
     offset = int((data.shape[1] - metadata.encoding[0].reconSpace.matrixSize.x)/2)
@@ -248,8 +229,6 @@ def process_raw(group, connection, config, metadata):
         tmpMeta = ismrmrd.Meta()
         tmpMeta['DataRole']               = 'Image'
         tmpMeta['ImageProcessingHistory'] = ['FIRE', 'PYTHON']
-        tmpMeta['WindowCenter']           = str((maxVal+1)/2)
-        tmpMeta['WindowWidth']            = str((maxVal+1))
         tmpMeta['Keep_image_geometry']    = 1
 
         xml = tmpMeta.serialize()
@@ -314,7 +293,6 @@ def process_image(images, connection, config, metadata):
     # Invert image contrast
     data = maxVal-data
     data = np.abs(data)
-    data = data.astype(np.int16)
     np.save(debugFolder + "/" + "imgInverted.npy", data)
 
     currentSeries = 0
