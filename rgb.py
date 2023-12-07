@@ -115,6 +115,7 @@ def process_raw(group, config, metadata):
     data = fft.fftshift( data, axes=(1, 2))
     data = fft.ifft2(    data, axes=(1, 2))
     data = fft.ifftshift(data, axes=(1, 2))
+    data *= np.prod(data.shape) # FFT scaling for consistency with ICE
 
     # Sum of squares coil combination
     # Data will be [PE RO phs]

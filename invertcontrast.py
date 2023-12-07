@@ -186,6 +186,7 @@ def process_raw(group, connection, config, metadata):
     data = fft.fftshift( data, axes=(1, 2))
     data = fft.ifft2(    data, axes=(1, 2))
     data = fft.ifftshift(data, axes=(1, 2))
+    data *= np.prod(data.shape) # FFT scaling for consistency with ICE
 
     # Sum of squares coil combination
     # Data will be [PE RO phs]
@@ -293,17 +294,22 @@ def process_image(images, connection, config, metadata):
     logging.debug("Original image data is size %s" % (data.shape,))
     np.save(debugFolder + "/" + "imgOrig.npy", data)
 
-    # Determine max value (12 or 16 bit)
-    BitsStored = 12
-    if (mrdhelper.get_userParameterLong_value(metadata, "BitsStored") is not None):
-        BitsStored = mrdhelper.get_userParameterLong_value(metadata, "BitsStored")
-    maxVal = 2**BitsStored - 1
+    if ('parameters' in config) and ('options' in config['parameters']) and (config['parameters']['options'] == 'complex'):
+        # Complex images are requested
+        data = data.astype(np.complex64)
+        maxVal = data.max()
+    else:
+        # Determine max value (12 or 16 bit)
+        BitsStored = 12
+        if (mrdhelper.get_userParameterLong_value(metadata, "BitsStored") is not None):
+            BitsStored = mrdhelper.get_userParameterLong_value(metadata, "BitsStored")
+        maxVal = 2**BitsStored - 1
 
-    # Normalize and convert to int16
-    data = data.astype(np.float64)
-    data *= maxVal/data.max()
-    data = np.around(data)
-    data = data.astype(np.int16)
+        # Normalize and convert to int16
+        data = data.astype(np.float64)
+        data *= maxVal/data.max()
+        data = np.around(data)
+        data = data.astype(np.int16)
 
     # Invert image contrast
     data = maxVal-data
@@ -321,12 +327,15 @@ def process_image(images, connection, config, metadata):
         # from_array() should be called with 'transpose=False' to avoid warnings, and when called
         # with this option, can take input as: [cha z y x], [z y x], or [y x]
         imagesOut[iImg] = ismrmrd.Image.from_array(data[...,iImg].transpose((3, 2, 0, 1)), transpose=False)
-        data_type = imagesOut[iImg].data_type
 
         # Create a copy of the original fixed header and update the data_type
         # (we changed it to int16 from all other types)
         oldHeader = head[iImg]
-        oldHeader.data_type = data_type
+        oldHeader.data_type = imagesOut[iImg].data_type
+
+        # Set the image_type to match the data_type for complex data
+        if (imagesOut[iImg].data_type == ismrmrd.DATATYPE_CXFLOAT) or (imagesOut[iImg].data_type == ismrmrd.DATATYPE_CXDOUBLE):
+            oldHeader.image_type = ismrmrd.IMTYPE_COMPLEX
 
         # Unused example, as images are grouped by series before being passed into this function now
         # oldHeader.image_series_index = currentSeries
