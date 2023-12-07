@@ -50,11 +50,11 @@ def create(filename='testdata.h5', matrix_size=256, coils=8, oversampling=2, rep
     encoding.trajectory = ismrmrd.xsd.trajectoryType('cartesian')
 
     # encoded and recon spaces
-    efov = ismrmrd.xsd.fieldOfViewMmType()
+    efov = ismrmrd.xsd.fieldOfViewMm()
     efov.x = oversampling*256
     efov.y = 256
     efov.z = 5
-    rfov = ismrmrd.xsd.fieldOfViewMmType()
+    rfov = ismrmrd.xsd.fieldOfViewMm()
     rfov.x = 256
     rfov.y = 256
     rfov.z = 5
