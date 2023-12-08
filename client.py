@@ -15,12 +15,17 @@ import time
 import os
 
 defaults = {
+    'filename':       '',
+    'in_group':       '',
     'address':        'localhost',
     'port':           9002, 
     'outfile':        'out.h5',
     'out_group':      str(datetime.datetime.now()),
     'config':         'default.xml',
-    'send_waveforms': False
+    'config_local':   '',
+    'send_waveforms': False,
+    'verbose':        False,
+    'logfile':        ''
 }
 
 def connection_receive_loop(sock, outfile, outgroup, verbose, logfile, recvAcqs, recvImages, recvWaveforms):
