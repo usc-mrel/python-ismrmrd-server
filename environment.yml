@@ -16,3 +16,6 @@ dependencies:
   - numpy=1.26.0
   - git=2.30.2
   - dos2unix=7.4.1       # For fixing line ending issues from Windows
+  - pip
+  - pip:
+    - sigpy==0.1.26
