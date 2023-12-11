@@ -52,7 +52,7 @@ def process(connection, config, metadata, N=None, w=None):
     logging.info("Config: \n%s", config)
     logging.info("Metadata: \n%s", metadata)
 
-    n_arm_per_frame = 36
+    n_arm_per_frame = 23
 
     if N is None:
         start = time.perf_counter()
@@ -90,7 +90,7 @@ def process(connection, config, metadata, N=None, w=None):
         w = np.reshape(w, (1,w.shape[1]))
         end = time.perf_counter()
         # logging.debug("Elapsed time during recon prep: %f secs.", end-start)
-        print(f"Elapsed time during recon prep: {end-start} secs.")
+        # print(f"Elapsed time during recon prep: {end-start} secs.")
     else:
         interleaves = N.ishape[0]
 
@@ -99,25 +99,25 @@ def process(connection, config, metadata, N=None, w=None):
     arm_counter = 0
     # for group in conditionalGroups(connection, lambda acq: not acq.is_flag_set(ismrmrd.ACQ_IS_PHASECORR_DATA), lambda acq: ((acq.idx.kspace_encode_step_1+1) % interleaves == 0)):
     for arm in connection:
-        startarm = time.perf_counter()
+        # startarm = time.perf_counter()
 
         # frames.append(process_arm(N_[arm_counter], w, arm, config, metadata))
         frames.append(N_[arm_counter].H * (arm.data[:,pre_discard:] * w))
 
-        endarm = time.perf_counter()
-        print(f"Elapsed time for arm NUFFT: {(endarm-startarm)*1e3} ms.")
+        # endarm = time.perf_counter()
+        # print(f"Elapsed time for arm NUFFT: {(endarm-startarm)*1e3} ms.")
 
         arm_counter += 1
         if arm_counter == n_unique_angles:
             arm_counter = 0
 
         if ((arm.idx.kspace_encode_step_1+1) % n_arm_per_frame) == 0:
-            start = time.perf_counter()
+            # start = time.perf_counter()
 
             image = process_group(arm, frames, config, metadata)
-            end = time.perf_counter()
+            # end = time.perf_counter()
 
-            print(f"Elapsed time for frame processing: {end-start} secs.")
+            # print(f"Elapsed time for frame processing: {end-start} secs.")
             frames = []
             logging.debug("Sending image to client:\n%s", image)
             connection.send_image(image)
@@ -155,7 +155,7 @@ def process_group(group, frames, config, metadata):
     for g in frames:
         data += g
     # Sum of squares coil combination
-    data = np.abs(data)
+    data = np.abs(np.flip(data, axis=(1,2)))
     data = np.square(data)
     data = np.sum(data, axis=0)
     data = np.sqrt(data)

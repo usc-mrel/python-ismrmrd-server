@@ -120,7 +120,7 @@ def process_group(N, w, group, config, metadata):
     data = N.H * (data * w)
 
     # Sum of squares coil combination
-    data = np.abs(data)
+    data = np.abs(np.flip(data, axis=(1,2)))
     data = np.square(data)
     data = np.sum(data, axis=0)
     data = np.sqrt(data)
