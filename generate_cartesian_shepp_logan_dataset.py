@@ -110,6 +110,26 @@ def create(filename='testdata.h5', matrix_size=256, coils=8, oversampling=2, rep
     encoding.encodingLimits = limits
     header.encoding.append(encoding)
 
+    # User Parameters
+    user = ismrmrd.xsd.userParametersType()
+    userParameterLong = ismrmrd.xsd.userParameterLongType()
+    userParameterLong.name = 'TestLong'
+    userParameterLong.value = '42'
+    user.userParameterLong.append(userParameterLong)
+    userParameterDouble = ismrmrd.xsd.userParameterDoubleType()
+    userParameterDouble.name = 'TestDouble'
+    userParameterDouble.value = '3.14159'
+    user.userParameterDouble.append(userParameterDouble)
+    userParameterString = ismrmrd.xsd.userParameterStringType()
+    userParameterString.name = 'TestString'
+    userParameterString.value = 'This is a test'
+    user.userParameterString.append(userParameterString)
+    userParameterBase64 = ismrmrd.xsd.userParameterBase64Type()
+    userParameterBase64.name = 'TestBase64'
+    userParameterBase64.value = 'QWxsIHlvdXIgYmFzZSBhcmUgYmVsb25nIHRvIHVz'
+    user.userParameterBase64.append(userParameterBase64)
+    header.userParameters = user
+
     dset.write_xml_header(header.toXML('utf-8'))
 
     # Synthesize the k-space data
