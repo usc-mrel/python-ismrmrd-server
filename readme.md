@@ -8,8 +8,9 @@
 	* 1.3. [Using raw data from an MRI scanner](#UsingrawdatafromanMRIscanner)
 	* 1.4. [Using DICOM images as input data](#UsingDICOMimagesasinputdata)
 * 2. [Setting up a working environment for the Python MRD client/server](#SettingupaworkingenvironmentforthePythonMRDclientserver)
-	* 2.1. [Setting up a conda environment](#Settingupacondaenvironment)
-	* 2.2. [Setting up a Docker environment](#SettingupaDockerenvironment)
+    * 2.1. [Setting up a devcontainer environment](#Settingupadevcontainerenvironment)
+	* 2.2. [Setting up a conda environment](#Settingupacondaenvironment)
+	* 2.3. [Setting up a Docker environment](#SettingupaDockerenvironment)
 * 3. [Code design](#Codedesign)
 * 4. [Saving incoming data](#Savingincomingdata)
 * 5. [Startup scripts](#Startupscripts)
@@ -226,7 +227,10 @@ For image processing workflows, DICOM images can be used as input by converting 
     ```
 
 ##  2. <a name='SettingupaworkingenvironmentforthePythonMRDclientserver'></a>Setting up a working environment for the Python MRD client/server
-###  2.1. <a name='Settingupacondaenvironment'></a>Setting up a conda environment
+###  2.1. <a name='Settingupadevcontainerenvironment'></a>Setting up a devcontainer environment
+[Development containers (devcontainers)](https://code.visualstudio.com/docs/devcontainers/containers) are a convenient way of using a Docker image as a working environment instead of installing packages locally.  If the [Dev Containers](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers) extension is installed in Visual Studio Code, then a prompt will appear when opening this folder to re-open it in a devcontainer.  The devcontainer is also compatible with [GitHub Codespaces](https://github.com/features/codespaces).  Further details can be found in [doc/devcontainers.md](doc/devcontainers.md).
+
+###  2.2. <a name='Settingupacondaenvironment'></a>Setting up a conda environment
 Conda is a Python environment manager that is useful for creating and maintaining Python packages and their dependencies.  It is available either as part of the larger [Anaconda](https://www.anaconda.com/) product, or separately as part of [Miniconda](https://docs.conda.io/en/latest/miniconda.html).  Although not required, it's helpful in setting up an environment for the Python ISMRMD client/server.  [Mamba](https://mamba.readthedocs.io/en/latest/) and [micromamba](https://mamba.readthedocs.io/en/latest/user_guide/micromamba.html) are drop-in replacements for Conda that are often faster at resolving dependencies.  The following instructions are for micromamba, but the command `micromamba` can be replaced with `conda` if conda is preferred.
 
 1. Download and install [Git](https://git-scm.com/book/en/v2/Getting-Started-Installing-Git) for your operating system.
@@ -253,7 +257,7 @@ Conda is a Python environment manager that is useful for creating and maintainin
 
 To use this environment in the future, open a command prompt and run ``micromamba activate mrd``.
 
-###  2.2. <a name='SettingupaDockerenvironment'></a>Setting up a Docker environment
+###  2.3. <a name='SettingupaDockerenvironment'></a>Setting up a Docker environment
 [Docker](https://www.docker.com/products/docker-desktop) is a virtualization platform that allows software to run in isolated environments called containers.  It provides a convenient mechanism to package up a reconstruction program and all its libraries in a manner that can be easily deployed to other computers without manually installing dependencies or other configuration steps.  
 
 A complete working environment of this respository has been compiled into a Docker image stored on [Docker Hub](https://hub.docker.com/r/kspacekelvin/fire-python).  This can be used to quickly get started, but [setting up a native Python environment](#SetupaDockerEnvironment) is recommended for development work.
