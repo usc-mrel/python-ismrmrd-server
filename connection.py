@@ -346,11 +346,11 @@ class Connection:
 
         image = ismrmrd.Image(header_bytes, attribute_bytes.decode('utf-8').split('\x00',1)[0])  # Strip off null teminator
 
-        logging.info("    Image is size %d x %d x %d with %d channels of type %s", image.matrix_size[0], image.matrix_size[1], image.matrix_size[2], image.channels, ismrmrd.get_dtype_from_data_type(image.data_type))
+        logging.info("    Image is size %d x %d x %d with %d channels of type %s", image.getHead().matrix_size[0], image.getHead().matrix_size[1], image.getHead().matrix_size[2], image.channels, ismrmrd.get_dtype_from_data_type(image.data_type))
         def calculate_number_of_entries(nchannels, xs, ys, zs):
             return nchannels * xs * ys * zs
 
-        nentries = calculate_number_of_entries(image.channels, *image.matrix_size)
+        nentries = calculate_number_of_entries(image.channels, *image.getHead().matrix_size)
         nbytes = nentries * ismrmrd.get_dtype_from_data_type(image.data_type).itemsize
 
         logging.debug("Reading in %d bytes of image data", nbytes)
