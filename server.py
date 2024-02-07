@@ -19,14 +19,17 @@ class Server:
     Something something docstring.
     """
 
-    def __init__(self, address, port, savedata, savedataFolder, multiprocessing):
+    def __init__(self, address, port, defaultConfig, savedata, savedataFolder, multiprocessing):
         logging.info("Starting server and listening for data at %s:%d", address, port)
+
+        logging.info("Default config is %s", defaultConfig)
         if (savedata is True):
             logging.debug("Saving incoming data is enabled.")
 
         if (multiprocessing is True):
             logging.debug("Multiprocessing is enabled.")
 
+        self.defaultConfig = defaultConfig
         self.multiprocessing = multiprocessing
         self.savedata = savedata
         self.savedataFolder = savedataFolder
@@ -127,10 +130,15 @@ class Server:
                     # Load module from file having exact name as config
                     module = importlib.import_module(config)
                     logging.info("Starting config %s", config)
-                    module.process(connection, config, metadata)
+                    module.process(connection, configAdditional, metadata)
                 except ImportError:
-                    logging.info("Unknown config '%s'.  Falling back to 'invertcontrast'", config)
-                    invertcontrast.process(connection, config, metadata)
+                    logging.info("Unknown config '%s'.  Falling back to default config: '%s'", config, self.defaultConfig)
+                    try:
+                        module = importlib.import_module(self.defaultConfig)
+                        logging.info("Starting config %s", self.defaultConfig)
+                        module.process(connection, configAdditional, metadata)
+                    except ImportError:
+                        logging.info("Failed to load default config '%s'", self.defaultConfig)
 
         except Exception as e:
             logging.exception(e)
