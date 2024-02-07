@@ -144,14 +144,7 @@ class Server:
             logging.exception(e)
 
         finally:
-            # Encapsulate shutdown in a try block because the socket may have
-            # already been closed on the other side
-            try:
-                sock.shutdown(socket.SHUT_RDWR)
-            except:
-                pass
-            sock.close()
-            logging.info("Socket closed")
+            connection.shutdown_close()
 
             # Dataset may not be closed properly if a close message is not received
             if connection.savedata is True:

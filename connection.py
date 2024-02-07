@@ -90,6 +90,16 @@ class Connection:
             handler = self.handlers.get(id, lambda: Connection.unknown_message_identifier(id))
             return handler()
 
+    def shutdown_close(self):
+        # Encapsulate shutdown in a try block because the socket may have
+        # already been closed on the other side
+        try:
+            self.socket.shutdown(socket.SHUT_RDWR)
+        except:
+            pass
+        self.socket.close()
+        logging.info("Socket closed")
+
     @staticmethod
     def unknown_message_identifier(identifier):
         logging.error("Received unknown message type: %d", identifier)
