@@ -211,7 +211,8 @@ def main(args):
                 try:
                     connection.send_waveform(wav)
                 except:
-                    logging.error('Failed to send waveform %d' % idx)
+                    logging.error('Failed to send waveform %d -- aborting!' % idx)
+                    break
         else:
             logging.info("Waveform data present, but send-waveforms option turned off")
 
@@ -225,7 +226,8 @@ def main(args):
             try:
                 connection.send_acquisition(acq)
             except:
-                logging.error('Failed to send acquisition %d' % idx)
+                logging.error('Failed to send acquisition %d -- aborting!' % idx)
+                break
 
     # --------------- Send image data ----------------------
     else:
@@ -244,10 +246,17 @@ def main(args):
                     image.attribute_string = image.attribute_string.decode('utf-8')
 
                 logging.debug("Sending image %d of %d", imgNum, dset.number_of_images(group)-1)
-                connection.send_image(image)
+                try:
+                    connection.send_image(image)
+                except:
+                    logging.error('Failed to send image %d -- aborting!' % imgNum)
+                    break
 
     dset.close()
-    connection.send_close()
+    try:
+        connection.send_close()
+    except:
+        logging.error('Failed to send close message!')
 
     # Wait for incoming data and cleanup
     logging.debug("Waiting for threads to finish")
