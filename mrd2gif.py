@@ -124,14 +124,25 @@ def main(args):
             else:
                 imagesWL.append(img)
 
+        # Add SequenceDescriptionAdditional to filename, if present
+        image = dset.read_image(group, 0)
+        meta = ismrmrd.Meta.deserialize(image.attribute_string)
+        if 'SequenceDescriptionAdditional' in meta.keys():
+            seqDescription = '_' + meta['SequenceDescriptionAdditional']
+        else:
+            seqDescription = ''
+
         # Make valid file name 
-        gifFileName = os.path.splitext(os.path.basename(args.filename))[0] + '_' + args.in_group + "_" + group + '.gif'
+        gifFileName = os.path.splitext(os.path.basename(args.filename))[0] + '_' + args.in_group + '_' + group + seqDescription + '.gif'
         gifFileName = "".join(c for c in gifFileName if c.isalnum() or c in (' ','.','_')).rstrip()
         gifFileName = gifFileName.replace(" ", "_")
         gifFilePath = os.path.join(os.path.dirname(args.filename), gifFileName)
 
         print("  Writing image: %s " % (gifFilePath))
-        imagesWL[0].save(gifFilePath, save_all=True, append_images=imagesWL[1:])
+        if len(images) > 1:
+            imagesWL[0].save(gifFilePath, save_all=True, append_images=imagesWL[1:], loop=0, duration=40)
+        else:
+            imagesWL[0].save(gifFilePath, save_all=True, append_images=imagesWL[1:])
 
     return
 
