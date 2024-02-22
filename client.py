@@ -199,6 +199,14 @@ def main(args):
         xml_header = "Dummy XML header"
     connection.send_metadata(xml_header)
 
+    # --------------- Send additional config -----------------------
+    groups = dset.list()
+    if ('configAdditional' in groups):
+        configAdditionalText = dset._dataset['configAdditional'][0]
+        configAdditionalText = configAdditionalText.decode("utf-8")
+        logging.info("Sending configAdditional found in file: %s", configAdditionalText)
+        connection.send_text(configAdditionalText)
+
     # --------------- Send waveform data ----------------------
     # TODO: Interleave waveform and other data so they arrive chronologically
     if hasWaveforms:

@@ -82,6 +82,7 @@ class Server:
             if connection.peek_mrd_message_identifier() == constants.MRD_MESSAGE_TEXT:
                 configAdditionalText = next(connection)
                 logging.info("Received additional config text: %s", configAdditionalText)
+                connection.save_additional_config(configAdditionalText)
                 try:
                     configAdditional = json.loads(configAdditionalText)
 

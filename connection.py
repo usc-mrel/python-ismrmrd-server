@@ -58,6 +58,15 @@ class Connection:
             self.dset = ismrmrd.Dataset(self.mrdFilePath, self.savedataGroup)
             self.dset._file.require_group(self.savedataGroup)
 
+    def save_additional_config(self, configAdditionalText):
+        if self.savedata is True:
+            if self.dset is None:
+                self.create_save_file()
+
+            self.dset._file.require_group("dataset")
+            dsetConfigAdditional = self.dset._dataset.require_dataset('configAdditional',shape=(1,), dtype=h5py.special_dtype(vlen=bytes))
+            dsetConfigAdditional[0] = bytes(configAdditionalText, 'utf-8')
+
     def send_logging(self, level, contents):
         try:
             formatted_contents = "%s %s" % (level, contents)
