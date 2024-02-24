@@ -53,11 +53,11 @@
 
     If using [conda](#Settingupacondaenvironment), this should be run in a new command prompt.  For Docker, this can be run in the same container from step 1.
 
-    MRD image data are also stored in HDF files arranged by groups. If the ``-G`` argument is not provided, a group name will be automatically created with the current date and time.  This may be useful when running the client multiple times, as multiple groups, organized by date/time, can be stored in the same output file.  Images are further grouped by series index, with a sub-group named ``images_x``, where x is image_series_index in the ImageHeader.  For example:
+    MRD image data are also stored in HDF files arranged by groups. If the ``-G`` argument is not provided, a group name will be automatically created with the current date and time.  This may be useful when running the client multiple times, as multiple groups, organized by date/time, can be stored in the same output file.  Images are further grouped by series index, with a sub-group named ``image_x``, where x is image_series_index in the ImageHeader.  For example:
     ```
-    /dataset/images_0/data         Image data
-    /dataset/images_0/header       MRD ImageHeader structure
-    /dataset/images_0/attributes   MRD MetaAttributes text
+    /dataset/image_0/data         Image data
+    /dataset/image_0/header       MRD ImageHeader structure
+    /dataset/image_0/attributes   MRD MetaAttributes text
     ```
 
 1. The [mrd2gif.py](mrd2gif.py) program can be used to convert an MRD Image file into an animated GIF for quick previewing:
@@ -74,7 +74,7 @@
     In MATLAB, the [ISMRMRD](https://github.com/ismrmrd/ismrmrd) library contains helper classes to load and view MRD files.  The files can also be read using MATLAB’s built-in HDF functions:
     ```
 
-    img = h5read('/tmp/phantom_img.h5', '/dataset/images_0/data');
+    img = h5read('/tmp/phantom_img.h5', '/dataset/image_0/data');
     figure, imagesc(img), axis image, colormap(gray)
     ```
 

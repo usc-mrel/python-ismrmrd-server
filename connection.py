@@ -380,7 +380,7 @@ class Connection:
         if self.savedata is True:
             if self.dset is None:
                 self.create_save_file()
-            self.dset.append_image("images_%d" % image.image_series_index, image)
+            self.dset.append_image("image_%d" % image.image_series_index, image)
 
         return image
 
