@@ -111,32 +111,22 @@ def main(args):
     #   /group/image_0/data        array of IsmrmrdImage data
     #   /group/image_0/header      array of ImageHeader
     #   /group/image_0/attributes  text of image MetaAttributes
-    isRaw   = False
-    isImage = False
+    hasRaw   = False
+    hasImage = False
     hasWaveforms = False
 
-    if ( ('data' in group) and ('xml' in group) ):
-        isRaw = True
-    else:
-        isImage = True
-        imageNames = group.keys()
-        logging.info("Found %d image sub-groups: %s", len(imageNames), ", ".join(imageNames))
-        # print(" ", "\n  ".join(imageNames))
-
-        for imageName in imageNames:
-            if ((imageName == 'xml') or (imageName == 'config') or (imageName == 'config_file')):
-                continue
-
-            image = group[imageName]
-            if not (('data' in image) and ('header' in image) and ('attributes' in image)):
-                isImage = False
+    if ('data' in group):
+        hasRaw = True
+    
+    if len([key for key in group.keys() if (key.startswith('image_') or key.startswith('images_'))]) > 0:
+        hasImage = True
 
     if ('waveforms' in group):
         hasWaveforms = True
 
     dset.close()
 
-    if ((isRaw is False) and (isImage is False)):
+    if ((hasRaw is False) and (hasImage is False)):
         logging.error("File does not contain properly formatted MRD raw or image data")
         return
 
@@ -225,7 +215,7 @@ def main(args):
             logging.info("Waveform data present, but send-waveforms option turned off")
 
     # --------------- Send raw data ----------------------
-    if isRaw:
+    if hasRaw:
         logging.info("Starting raw data session")
         logging.info("Found %d raw data readouts", dset.number_of_acquisitions())
 
@@ -238,13 +228,9 @@ def main(args):
                 break
 
     # --------------- Send image data ----------------------
-    else:
+    if hasImage:
         logging.info("Starting image data session")
-        for group in groups:
-            if ( (group == 'config') or (group == 'config_file') or (group == 'xml') ):
-                logging.info("Skipping group %s", group)
-                continue
-
+        for group in [key for key in groups if (key.startswith('image_') or key.startswith('images_'))]:
             logging.info("Reading images from '/" + args.in_group + "/" + group + "'")
 
             for imgNum in range(0, dset.number_of_images(group)):
