@@ -82,11 +82,6 @@ def process(connection, config, metadata, N=None, w=None):
 
         nchannel = metadata.acquisitionSystemInformation.receiverChannels
         pre_discard = traj['param']['pre_discard'][0,0][0,0]
-        # create the NUFFT operator
-        # N_ = []
-        # for arm_i in range(0, n_unique_angles):
-        #     N_.append(NUFFT([nchannel, msize, msize], ktraj[arm_i,:,:]))
-
         w = traj['w']
         w = np.reshape(w, (1,w.shape[1]))
         # end = time.perf_counter()
@@ -98,6 +93,7 @@ def process(connection, config, metadata, N=None, w=None):
     # Discard phase correction lines and accumulate lines until we get fully sampled data
     frames = []
     arm_counter = 0
+    rep_counter = 0
     device = sp.Device(1)
 
     coord_gpu = sp.to_device(ktraj, device=device)
@@ -106,8 +102,6 @@ def process(connection, config, metadata, N=None, w=None):
     for arm in connection:
 
         startarm = time.perf_counter()
-        # frames.append(process_arm(N_[arm_counter], w, arm, config, metadata))
-        # frames.append(N_[arm_counter].H * (arm.data[:,pre_discard:] * w))
         adata = sp.to_device(arm.data[:,pre_discard:], device=device)
 
         with device:
@@ -127,66 +121,40 @@ def process(connection, config, metadata, N=None, w=None):
         if ((arm.idx.kspace_encode_step_1+1) % n_arm_per_frame) == 0:
             # start = time.perf_counter()
 
-            image = process_group(arm, frames, config, metadata)
+            image = process_group(arm, frames, device, rep_counter, config, metadata)
             # end = time.perf_counter()
 
             # print(f"Elapsed time for frame processing: {end-start} secs.")
             frames = []
             logging.debug("Sending image to client:\n%s", image)
             connection.send_image(image)
+            rep_counter += 1
 
 
+def process_group(group, frames, device, rep, config, metadata):
+    xp = device.xp
+    with device:
+        data = xp.zeros(frames[0].shape, dtype=np.complex128)
+        for g in frames:
+            data += g
+        # Sum of squares coil combination
+        data = np.abs(np.flip(data, axis=(1,2)))
+        data = np.square(data)
+        data = np.sum(data, axis=0)
+        data = np.sqrt(data)
 
+        # Determine max value (12 or 16 bit)
+        BitsStored = 12
+        if (mrdhelper.get_userParameterLong_value(metadata, "BitsStored") is not None):
+            BitsStored = mrdhelper.get_userParameterLong_value(metadata, "BitsStored")
+        maxVal = 2**BitsStored - 1
 
+        # Normalize and convert to int16
+        data *= maxVal/data.max()
+        data = np.around(data)
+        data = data.astype(np.int16)
 
-def process_arm(N, w, arm, config, metadata):
-    # if len(group) == 0:
-    #     return []
-
-    # Create folder, if necessary
-    # if not os.path.exists(debugFolder):
-    #     os.makedirs(debugFolder)
-    #     logging.debug("Created folder " + debugFolder + " for debug output files")
-
-
-    # Format data into single [cha "PE" RO] array
-    # data = arm.data #[acquisition.data for acquisition in group]
-    # data = np.stack(data, axis=1)
-
-    # n_samples_keep = N.oshape[1]
-    # n_samples_discard = arm.data.shape[1] - n_samples_keep
-
-    # discard the extra samples (in the readout direction)
-    # data = arm.data[:,n_samples_discard:]
-
-    data = N.H * (arm.data[:,10:] * w)
-
-    return data
-
-def process_group(group, frames, device, config, metadata):
-    data = cp.zeros(frames[0].shape, dtype=np.complex128)
-    for g in frames:
-        data += sp.to_device(g)
-    # Sum of squares coil combination
-    data = np.abs(np.flip(data, axis=(1,2)))
-    data = np.square(data)
-    data = np.sum(data, axis=0)
-    data = np.sqrt(data)
-
-    # Determine max value (12 or 16 bit)
-    BitsStored = 12
-    if (mrdhelper.get_userParameterLong_value(metadata, "BitsStored") is not None):
-        BitsStored = mrdhelper.get_userParameterLong_value(metadata, "BitsStored")
-    maxVal = 2**BitsStored - 1
-
-    # Normalize and convert to int16
-    data *= maxVal/data.max()
-    data = np.around(data)
-    data = data.astype(np.int16)
-
-    interleaves = 20
-    repetition = 0 # np.int32((group[-1].idx.kspace_encode_step_1+1) / interleaves)
-    
+    data = sp.to_device(data)
 
     # Format as ISMRMRD image data
     # data has shape [RO PE], i.e. [x y].
@@ -194,7 +162,7 @@ def process_group(group, frames, device, config, metadata):
     # with this option, can take input as: [cha z y x], [z y x], or [y x]
     image = ismrmrd.Image.from_array(data.transpose(), acquisition=group, transpose=False)
 
-    image.image_index = repetition
+    image.image_index = rep
 
     # Set field of view
     image.field_of_view = (ctypes.c_float(metadata.encoding[0].reconSpace.fieldOfView_mm.x), 
