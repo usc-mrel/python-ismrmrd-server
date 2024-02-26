@@ -218,7 +218,7 @@ def main(args):
     # Write all images
     for iSer in range(len(imgAll)):
         for iImg in range(len(imgAll[iSer])):
-            mrdDset.append_image("images_%d" % imgAll[iSer][iImg].image_series_index, imgAll[iSer][iImg])
+            mrdDset.append_image("image_%d" % imgAll[iSer][iImg].image_series_index, imgAll[iSer][iImg])
 
     mrdDset.close()
 

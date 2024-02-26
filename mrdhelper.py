@@ -171,3 +171,31 @@ def create_roi(x, y, rgb = (1, 0, 0), thickness = 1, style = 0, visibility = 1):
         roi.append('%f' % xy[i][1])
 
     return roi
+
+def parse_roi(roi):
+    """
+    Parse an MRD-formatted ROI
+        Input:
+            - roi (string list)  : MRD-formatted ROI from a MetaAttribute
+        Output:
+            - x (1D ndarray)     : x coordinates in units of pixels, with (0,0) at the top left
+            - y (1D ndarray)     : y coordinates in units of pixels, matching the length of x
+            - rgb (3 item tuple) : Colour as an (red, green, blue) tuple normalized to 1
+            - thickness (float)  : Line thickness
+            - style (int)        : Line style (0 = solid, 1 = dashed)
+            - visibility (int)   : Line visibility (0 = false, 1 = true)
+    """
+    if (len(roi) < 8) or (len(roi) % 2):
+        raise Exception("ROI must have 6 metadata values, at least one coordinate, and an even number of values (x,y pairs)")
+    
+    fRoi = [float(x) for x in roi]
+
+    rgb = tuple(fRoi[0:3])
+    thickness = fRoi[3]
+    style = int(fRoi[4])
+    visibility = int(fRoi[5])
+
+    x = fRoi[6::2]
+    y = fRoi[7::2]
+
+    return x, y, rgb, thickness, style, visibility

@@ -111,32 +111,22 @@ def main(args):
     #   /group/image_0/data        array of IsmrmrdImage data
     #   /group/image_0/header      array of ImageHeader
     #   /group/image_0/attributes  text of image MetaAttributes
-    isRaw   = False
-    isImage = False
+    hasRaw   = False
+    hasImage = False
     hasWaveforms = False
 
-    if ( ('data' in group) and ('xml' in group) ):
-        isRaw = True
-    else:
-        isImage = True
-        imageNames = group.keys()
-        logging.info("Found %d image sub-groups: %s", len(imageNames), ", ".join(imageNames))
-        # print(" ", "\n  ".join(imageNames))
-
-        for imageName in imageNames:
-            if ((imageName == 'xml') or (imageName == 'config') or (imageName == 'config_file')):
-                continue
-
-            image = group[imageName]
-            if not (('data' in image) and ('header' in image) and ('attributes' in image)):
-                isImage = False
+    if ('data' in group):
+        hasRaw = True
+    
+    if len([key for key in group.keys() if (key.startswith('image_') or key.startswith('images_'))]) > 0:
+        hasImage = True
 
     if ('waveforms' in group):
         hasWaveforms = True
 
     dset.close()
 
-    if ((isRaw is False) and (isImage is False)):
+    if ((hasRaw is False) and (hasImage is False)):
         logging.error("File does not contain properly formatted MRD raw or image data")
         return
 
@@ -199,6 +189,14 @@ def main(args):
         xml_header = "Dummy XML header"
     connection.send_metadata(xml_header)
 
+    # --------------- Send additional config -----------------------
+    groups = dset.list()
+    if ('configAdditional' in groups):
+        configAdditionalText = dset._dataset['configAdditional'][0]
+        configAdditionalText = configAdditionalText.decode("utf-8")
+        logging.info("Sending configAdditional found in file: %s", configAdditionalText)
+        connection.send_text(configAdditionalText)
+
     # --------------- Send waveform data ----------------------
     # TODO: Interleave waveform and other data so they arrive chronologically
     if hasWaveforms:
@@ -211,12 +209,13 @@ def main(args):
                 try:
                     connection.send_waveform(wav)
                 except:
-                    logging.error('Failed to send waveform %d' % idx)
+                    logging.error('Failed to send waveform %d -- aborting!' % idx)
+                    break
         else:
             logging.info("Waveform data present, but send-waveforms option turned off")
 
     # --------------- Send raw data ----------------------
-    if isRaw:
+    if hasRaw:
         logging.info("Starting raw data session")
         logging.info("Found %d raw data readouts", dset.number_of_acquisitions())
 
@@ -225,16 +224,13 @@ def main(args):
             try:
                 connection.send_acquisition(acq)
             except:
-                logging.error('Failed to send acquisition %d' % idx)
+                logging.error('Failed to send acquisition %d -- aborting!' % idx)
+                break
 
     # --------------- Send image data ----------------------
-    else:
+    if hasImage:
         logging.info("Starting image data session")
-        for group in groups:
-            if ( (group == 'config') or (group == 'config_file') or (group == 'xml') ):
-                logging.info("Skipping group %s", group)
-                continue
-
+        for group in [key for key in groups if (key.startswith('image_') or key.startswith('images_'))]:
             logging.info("Reading images from '/" + args.in_group + "/" + group + "'")
 
             for imgNum in range(0, dset.number_of_images(group)):
@@ -244,10 +240,17 @@ def main(args):
                     image.attribute_string = image.attribute_string.decode('utf-8')
 
                 logging.debug("Sending image %d of %d", imgNum, dset.number_of_images(group)-1)
-                connection.send_image(image)
+                try:
+                    connection.send_image(image)
+                except:
+                    logging.error('Failed to send image %d -- aborting!' % imgNum)
+                    break
 
     dset.close()
-    connection.send_close()
+    try:
+        connection.send_close()
+    except:
+        logging.error('Failed to send close message!')
 
     # Wait for incoming data and cleanup
     logging.debug("Waiting for threads to finish")

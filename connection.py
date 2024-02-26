@@ -58,6 +58,15 @@ class Connection:
             self.dset = ismrmrd.Dataset(self.mrdFilePath, self.savedataGroup)
             self.dset._file.require_group(self.savedataGroup)
 
+    def save_additional_config(self, configAdditionalText):
+        if self.savedata is True:
+            if self.dset is None:
+                self.create_save_file()
+
+            self.dset._file.require_group("dataset")
+            dsetConfigAdditional = self.dset._dataset.require_dataset('configAdditional',shape=(1,), dtype=h5py.special_dtype(vlen=bytes))
+            dsetConfigAdditional[0] = bytes(configAdditionalText, 'utf-8')
+
     def send_logging(self, level, contents):
         try:
             formatted_contents = "%s %s" % (level, contents)
@@ -89,6 +98,16 @@ class Connection:
 
             handler = self.handlers.get(id, lambda: Connection.unknown_message_identifier(id))
             return handler()
+
+    def shutdown_close(self):
+        # Encapsulate shutdown in a try block because the socket may have
+        # already been closed on the other side
+        try:
+            self.socket.shutdown(socket.SHUT_RDWR)
+        except:
+            pass
+        self.socket.close()
+        logging.info("Socket closed")
 
     @staticmethod
     def unknown_message_identifier(identifier):
@@ -346,11 +365,11 @@ class Connection:
 
         image = ismrmrd.Image(header_bytes, attribute_bytes.decode('utf-8').split('\x00',1)[0])  # Strip off null teminator
 
-        logging.info("    Image is size %d x %d x %d with %d channels of type %s", image.matrix_size[0], image.matrix_size[1], image.matrix_size[2], image.channels, ismrmrd.get_dtype_from_data_type(image.data_type))
+        logging.info("    Image is size %d x %d x %d with %d channels of type %s", image.getHead().matrix_size[0], image.getHead().matrix_size[1], image.getHead().matrix_size[2], image.channels, ismrmrd.get_dtype_from_data_type(image.data_type))
         def calculate_number_of_entries(nchannels, xs, ys, zs):
             return nchannels * xs * ys * zs
 
-        nentries = calculate_number_of_entries(image.channels, *image.matrix_size)
+        nentries = calculate_number_of_entries(image.channels, *image.getHead().matrix_size)
         nbytes = nentries * ismrmrd.get_dtype_from_data_type(image.data_type).itemsize
 
         logging.debug("Reading in %d bytes of image data", nbytes)
@@ -361,7 +380,7 @@ class Connection:
         if self.savedata is True:
             if self.dset is None:
                 self.create_save_file()
-            self.dset.append_image("images_%d" % image.image_series_index, image)
+            self.dset.append_image("image_%d" % image.image_series_index, image)
 
         return image
 
