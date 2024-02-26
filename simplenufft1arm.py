@@ -12,9 +12,10 @@ import time
 
 from scipy.io import loadmat
 from sigpy.linop import NUFFT
-from sigpy import Device
-from sigpy import to_device
 from scipy.ndimage import rotate
+import sigpy as sp
+from sigpy import fourier
+import cupy as cp
 
 # Folder for debug output files
 debugFolder = "/tmp/share/debug"
@@ -52,10 +53,10 @@ def process(connection, config, metadata, N=None, w=None):
     logging.info("Config: \n%s", config)
     logging.info("Metadata: \n%s", metadata)
 
-    n_arm_per_frame = 23
+    n_arm_per_frame = 34
 
     if N is None:
-        start = time.perf_counter()
+        # start = time.perf_counter()
         # get the k-space trajectory based on the metadata hash.
         traj_name = metadata.userParameters.userParameterString[1].value
 
@@ -82,13 +83,13 @@ def process(connection, config, metadata, N=None, w=None):
         nchannel = metadata.acquisitionSystemInformation.receiverChannels
         pre_discard = traj['param']['pre_discard'][0,0][0,0]
         # create the NUFFT operator
-        N_ = []
-        for arm_i in range(0, n_unique_angles):
-            N_.append(NUFFT([nchannel, msize, msize], ktraj[arm_i,:,:]))
+        # N_ = []
+        # for arm_i in range(0, n_unique_angles):
+        #     N_.append(NUFFT([nchannel, msize, msize], ktraj[arm_i,:,:]))
 
         w = traj['w']
         w = np.reshape(w, (1,w.shape[1]))
-        end = time.perf_counter()
+        # end = time.perf_counter()
         # logging.debug("Elapsed time during recon prep: %f secs.", end-start)
         # print(f"Elapsed time during recon prep: {end-start} secs.")
     else:
@@ -97,15 +98,27 @@ def process(connection, config, metadata, N=None, w=None):
     # Discard phase correction lines and accumulate lines until we get fully sampled data
     frames = []
     arm_counter = 0
+    device = sp.Device(1)
+
+    coord_gpu = sp.to_device(ktraj, device=device)
+    w_gpu = sp.to_device(w, device=device)
     # for group in conditionalGroups(connection, lambda acq: not acq.is_flag_set(ismrmrd.ACQ_IS_PHASECORR_DATA), lambda acq: ((acq.idx.kspace_encode_step_1+1) % interleaves == 0)):
     for arm in connection:
-        # startarm = time.perf_counter()
 
+        startarm = time.perf_counter()
         # frames.append(process_arm(N_[arm_counter], w, arm, config, metadata))
-        frames.append(N_[arm_counter].H * (arm.data[:,pre_discard:] * w))
+        # frames.append(N_[arm_counter].H * (arm.data[:,pre_discard:] * w))
+        adata = sp.to_device(arm.data[:,pre_discard:], device=device)
 
-        # endarm = time.perf_counter()
-        # print(f"Elapsed time for arm NUFFT: {(endarm-startarm)*1e3} ms.")
+        with device:
+            frames.append(fourier.nufft_adjoint(
+                    adata*w_gpu,
+                    coord_gpu[arm_counter,:,:],
+                    (nchannel, msize, msize)))
+        # frames.append(sp.nufft_adjoint(arm.data[:,pre_discard:] * w, ktraj[arm_counter,:,:], oshape=(nchannel, msize, msize)))
+
+        endarm = time.perf_counter()
+        print(f"Elapsed time for arm {arm_counter} NUFFT: {(endarm-startarm)*1e3} ms.")
 
         arm_counter += 1
         if arm_counter == n_unique_angles:
@@ -150,10 +163,10 @@ def process_arm(N, w, arm, config, metadata):
 
     return data
 
-def process_group(group, frames, config, metadata):
-    data = np.zeros(frames[0].shape, dtype=np.complex128)
+def process_group(group, frames, device, config, metadata):
+    data = cp.zeros(frames[0].shape, dtype=np.complex128)
     for g in frames:
-        data += g
+        data += sp.to_device(g)
     # Sum of squares coil combination
     data = np.abs(np.flip(data, axis=(1,2)))
     data = np.square(data)
