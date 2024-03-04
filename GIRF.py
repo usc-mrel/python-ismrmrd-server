@@ -154,7 +154,63 @@ def hanningt(windowLength):
 # Example usage:
 # kPred, GPred = apply_GIRF(gradients_nominal, dt, R)
 
+def calculate_matrix_pcs_to_dcs(patient_position):
+    """
+    Calculate transformation matrix from Patient Coordinate System (PCS) to Device Coordinate System (DCS).
+
+    Parameters:
+    - patient_position (str): Patient position code (e.g., 'HFP', 'HFS', 'HFDR', 'HFDL', 'FFP', 'FFS', 'FFDR', 'FFDL').
+
+    Returns:
+    - R_pcs2dcs (numpy.ndarray): 3x3 transformation matrix.
+    """
+    # Initialize the transformation matrix
+    R_pcs2dcs = np.eye(3)
+
+    # Define transformation matrices for different patient positions
+    switch_dict = {
+        'HFP': np.array([[-1, 0, 0],
+                         [0, 1, 0],
+                         [0, 0, -1]]),
+        'HFS': np.array([[1, 0, 0],
+                         [0, -1, 0],
+                         [0, 0, -1]]),
+        'HFDR': np.array([[0, 1, 0],
+                          [1, 0, 0],
+                          [0, 0, -1]]),
+        'HFDL': np.array([[0, -1, 0],
+                          [-1, 0, 0],
+                          [0, 0, -1]]),
+        'FFP': np.array([[1, 0, 0],
+                         [0, 1, 0],
+                         [0, 0, 1]]),
+        'FFS': np.array([[-1, 0, 0],
+                         [0, -1, 0],
+                         [0, 0, 1]]),
+        'FFDR': np.array([[0, -1, 0],
+                          [1, 0, 0],
+                          [0, 0, 1]]),
+        'FFDL': np.array([[0, 1, 0],
+                          [-1, 0, 0],
+                          [0, 0, 1]])
+    }
+
+    # Retrieve the transformation matrix based on the patient position
+    R_pcs2dcs = switch_dict.get(patient_position, R_pcs2dcs)
+
+    return R_pcs2dcs
+
+
 if __name__ == '__main__':
+    # Example code to construct rot matrix
+    # RO_sign = -1
+    # phase_dir = double(raw_data.head.phase_dir(:,1));
+    # read_dir  = double(raw_data.head.read_dir(:,1))*RO_sign; % Because we flip PE(ky) of the trajectory.
+    # slice_dir = double(raw_data.head.slice_dir(:,1));
+    # rotMatrixGCSToPCS = [phase_dir read_dir slice_dir];
+    # patient_position = 'HFS'
+    # rotMatrixPCSToDCS = calculate_matrix_pcs_to_dcs(patient_position)
+    # rotMatrixGCSToDCS = rotMatrixPCSToDCS.dot(rotMatrixGCSToPCS)
     # load example gradients_nominal, rotMatrixGCSToDCS, dt, and resulting GPred from Matlab to compare.
     girf_matlab = loadmat('girf_matlab')
 
@@ -169,3 +225,5 @@ if __name__ == '__main__':
     dt = girf_matlab['dt'][0][0]
     kPred, GPred = apply_GIRF(gradients_nominal, dt, sR, tRR)
     pass
+
+
