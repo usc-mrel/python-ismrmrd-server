@@ -68,7 +68,7 @@ def apply_GIRF(gradients_nominal, dt, R, tRR=0):
 
     for l in range(interleaves):
         G0 = gradients_nominal[:, l, :].copy()
-        G0[:, 2] = 0  # Zero out third dimension
+        G0 = np.concatenate((G0, np.zeros((gradients_nominal.shape[0], 1))), axis=1)
         G0 = np.dot(R, G0.T).T
 
         for ax in range(3):
@@ -77,8 +77,8 @@ def apply_GIRF(gradients_nominal, dt, R, tRR=0):
             
             # SPIRAL OUT
             N = len(G0)
-            index_range = np.arange(-np.floor(N/2), np.ceil(N/2)) + np.floor(L/2) + 1
-            G[index_range.astype(int)] = G0[:, ax]
+            index_range = np.arange(-np.floor(N/2), np.ceil(N/2), dtype=int) + int(np.floor(L/2)) + 1
+            G[index_range] = G0[:, ax]
 
             # Make a waveform periodic by returning to zero
             H = G[index_range[-1]] * hanningt(400)
@@ -86,9 +86,9 @@ def apply_GIRF(gradients_nominal, dt, R, tRR=0):
 
             dw = 1 / (L * dtSim)
             w = np.arange(-np.floor(L/2), np.ceil(L/2)) * dw
-            I = np.fft.fftshift(np.fft.ifft(np.fft.ifftshift(G)))
+            I = np.conj(np.fft.fftshift(np.fft.ifft(np.fft.ifftshift(G))))  # I am missing something and the grads are flipped without conj.
 
-            GIRF1 = np.zeros(L)
+            GIRF1 = np.zeros(L, dtype=np.complex64)
             
             if dt > dtGIRF:
                 GIRF1 = GIRF[round(l_GIRF/2 - L/2 + 1):round(l_GIRF/2 + L/2), ax]
@@ -105,15 +105,15 @@ def apply_GIRF(gradients_nominal, dt, R, tRR=0):
 
             BW = 1 / dt
             L = round(BW / dw)
-            PredGrad = np.zeros(L)
-            NomGrad = np.zeros(L)
+            PredGrad = np.zeros(L, dtype=np.complex64)
+            NomGrad = np.zeros(L, dtype=np.complex64)
             zeropad = round(abs((len(G) - L) / 2))
 
             PredGrad[zeropad:zeropad + len(P)] = P
             NomGrad[zeropad:zeropad + len(I)] = I
-
-            PredGrad = np.fft.fftshift(np.fft.ifft(np.fft.ifftshift(PredGrad))) * L / len(G)
-            NomGrad = np.fft.fftshift(np.fft.ifft(np.fft.ifftshift(NomGrad))) * L / len(G)
+            
+            PredGrad = np.fft.fftshift(np.fft.ifft(np.fft.ifftshift(PredGrad))) * L
+            NomGrad = np.fft.fftshift(np.fft.ifft(np.fft.ifftshift(NomGrad))) * L
 
             multiplier = np.where(np.real(PredGrad) > 0, 1, -1)
             PredGrad = np.abs(PredGrad) * multiplier
@@ -144,7 +144,7 @@ def apply_GIRF(gradients_nominal, dt, R, tRR=0):
 
 def hanningt(windowLength):
     try:
-        from scipy.signal import hann
+        from scipy.signal.windows import hann
         return hann(windowLength)
     except ImportError:
         N = windowLength - 1
@@ -155,11 +155,17 @@ def hanningt(windowLength):
 # kPred, GPred = apply_GIRF(gradients_nominal, dt, R)
 
 if __name__ == '__main__':
-    # load example gradients_nominal, rotMatrixGCSToDCS, dt
+    # load example gradients_nominal, rotMatrixGCSToDCS, dt, and resulting GPred from Matlab to compare.
+    girf_matlab = loadmat('girf_matlab')
+
+    gpred_matlab = girf_matlab['g_predicted']
+    kpred_matlab = girf_matlab['k_predicted']
+
+    gradients_nominal = girf_matlab['g_tot']
     sR = {}
-    # sR['R'] = rotMatrixGCSToDCS
+    sR['R'] = girf_matlab['sR']['R'][0,0]
     sR['T'] = 0.55
     tRR = -1.5
-    # dt = ADCDwellTimeUs * 1e-6
-    #kPred, GPred = apply_GIRF(gradients_nominal, dt, R)
+    dt = girf_matlab['dt'][0][0]
+    kPred, GPred = apply_GIRF(gradients_nominal, dt, sR, tRR)
     pass
