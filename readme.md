@@ -244,7 +244,7 @@ Conda is a Python environment manager that is useful for creating and maintainin
     git clone https://github.com/kspaceKelvin/python-ismrmrd-server.git
     ```
 
-1. Change into this respository's directory and create a new conda environment for MRD using the dependencies listed in [environment.yml](environment.yml).
+1. Change into this respository's directory and create a new conda environment for MRD using the dependencies listed in [environment.yml](environment.yml).  If using Windows, then [environment_windows.yml](environment_windows.yml) should be used instead.
     ```
     cd python-ismrmrd-server
     micromamba create -f environment.yml
@@ -253,6 +253,11 @@ Conda is a Python environment manager that is useful for creating and maintainin
 1. Active the new MRD environment
     ```
     micromamba activate mrd
+    ```
+
+1. If using Windows, then install the ISMRMRD Python library through pip.  For MacOS and Linux, this was installed through conda.
+    ```
+    pip install ismrmrd
     ```
 
 To use this environment in the future, open a command prompt and run ``micromamba activate mrd``.
