@@ -16,7 +16,7 @@ from scipy.ndimage import rotate
 import sigpy as sp
 from sigpy import fourier
 import cupy as cp
-
+import GIRF
 # Folder for debug output files
 debugFolder = "/tmp/share/debug"
 
@@ -54,6 +54,7 @@ def process(connection, config, metadata, N=None, w=None):
     logging.info("Metadata: \n%s", metadata)
 
     n_arm_per_frame = 34
+    APPLY_GIRF = True
 
     if N is None:
         # start = time.perf_counter()
@@ -65,9 +66,26 @@ def process(connection, config, metadata, N=None, w=None):
 
         n_unique_angles = traj['param']['repetitions'][0,0][0,0]
 
-        # truncate the trajectory to the number of interleaves (NOTE: this won't work for golden angle?)
         kx = traj['kx'][:,:]
         ky = traj['ky'][:,:]
+
+
+        # Prepare gradients and variables if GIRF is requested. 
+        # Unfortunately, we don't know rotations until the first data, so we can't prepare them yet.
+        if APPLY_GIRF:
+            dt = 1e-6 # [s]
+
+            patient_position = metadata.measurementInformation.patientPosition.value
+            r_PCS2DCS = GIRF.calculate_matrix_pcs_to_dcs(patient_position)
+
+            gx = 1e3*np.diff(np.concatenate((np.zeros((1, kx.shape[1])), kx)), axis=0)/dt/42.58e6
+            gy = 1e3*np.diff(np.concatenate((np.zeros((1, kx.shape[1])), ky)), axis=0)/dt/42.58e6
+            g_nom = np.stack((gy, gx), axis=2)
+
+            sR = {'T': 0.55}
+            tRR = 0 #-1.5
+
+
         ktraj = np.stack((kx, ky), axis=2)
 
         # find max ktraj value
@@ -100,6 +118,20 @@ def process(connection, config, metadata, N=None, w=None):
     w_gpu = sp.to_device(w, device=device)
     # for group in conditionalGroups(connection, lambda acq: not acq.is_flag_set(ismrmrd.ACQ_IS_PHASECORR_DATA), lambda acq: ((acq.idx.kspace_encode_step_1+1) % interleaves == 0)):
     for arm in connection:
+
+        # First arm came, if GIRF is requested, correct trajectories and reupload.
+        if (arm.idx.kspace_encode_step_1 == 0) and APPLY_GIRF:
+            r_GCS2PCS = np.array([arm.phase_dir, -np.array(arm.read_dir), arm.slice_dir])
+            r_GCS2DCS = r_PCS2DCS.dot(r_GCS2PCS)
+            sR['R'] = r_GCS2DCS
+            k_pred, _ = GIRF.apply_GIRF(g_nom, dt, sR, tRR)
+            k_pred = np.flip(k_pred[:,:,0:2], axis=2) # Drop the z
+            kmax = np.max(np.abs(k_pred[:,:,0] + 1j * k_pred[:,:,1]))
+            k_pred = np.swapaxes(k_pred, 0, 1)
+            k_pred = 0.5 * (k_pred / kmax) * msize
+            coord_gpu = sp.to_device(k_pred, device=device) # Replace  the original k-space
+
+            
 
         startarm = time.perf_counter()
         adata = sp.to_device(arm.data[:,pre_discard:], device=device)
