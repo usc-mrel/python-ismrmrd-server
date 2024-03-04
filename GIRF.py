@@ -204,10 +204,10 @@ def calculate_matrix_pcs_to_dcs(patient_position):
 if __name__ == '__main__':
     # Example code to construct rot matrix
     # RO_sign = -1
-    # phase_dir = double(raw_data.head.phase_dir(:,1));
-    # read_dir  = double(raw_data.head.read_dir(:,1))*RO_sign; % Because we flip PE(ky) of the trajectory.
-    # slice_dir = double(raw_data.head.slice_dir(:,1));
-    # rotMatrixGCSToPCS = [phase_dir read_dir slice_dir];
+    # phase_dir = raw_data.head.phase_dir[:,1])
+    # read_dir  = raw_data.head.read_dir[:,1])*RO_sign # Because we flip PE(ky) of the trajectory.
+    # slice_dir = raw_data.head.slice_dir[:,1])
+    # rotMatrixGCSToPCS = [phase_dir read_dir slice_dir]
     # patient_position = 'HFS'
     # rotMatrixPCSToDCS = calculate_matrix_pcs_to_dcs(patient_position)
     # rotMatrixGCSToDCS = rotMatrixPCSToDCS.dot(rotMatrixGCSToPCS)
@@ -224,6 +224,19 @@ if __name__ == '__main__':
     tRR = -1.5
     dt = girf_matlab['dt'][0][0]
     kPred, GPred = apply_GIRF(gradients_nominal, dt, sR, tRR)
-    pass
+    TEST_ROT_MTX = True
+    if TEST_ROT_MTX:
+        import ismrmrd
+        f = ismrmrd.Dataset('/server/home/btasdelen/MRI_DATA/bodycomp/vol0712_20230926/raw/h5/meas_MID00219_FID07835_fl3d_spiral_vibe_bh_TE0_39_TR5_2_20deg_Qfatsat.h5', '/dataset', False)
+        head = f.read_acquisition(0).getHead()
+        meta = ismrmrd.xsd.CreateFromDocument(f.read_xml_header())
+        f.close()
+
+        rotMatrixGCSToPCS = np.array([head.phase_dir, -np.array(head.read_dir), head.slice_dir])
+
+        patient_position = meta.measurementInformation.patientPosition.value
+        rotMatrixPCSToDCS = calculate_matrix_pcs_to_dcs(patient_position)
+        rotMatrixGCSToDCS = rotMatrixPCSToDCS.dot(rotMatrixGCSToPCS)
+        pass
 
 
