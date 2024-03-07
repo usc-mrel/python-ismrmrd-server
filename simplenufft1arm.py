@@ -78,12 +78,12 @@ def process(connection, config, metadata, N=None, w=None):
             patient_position = metadata.measurementInformation.patientPosition.value
             r_PCS2DCS = GIRF.calculate_matrix_pcs_to_dcs(patient_position)
 
-            gx = 1e3*np.diff(np.concatenate((np.zeros((1, kx.shape[1])), kx)), axis=0)/dt/42.58e6
-            gy = 1e3*np.diff(np.concatenate((np.zeros((1, kx.shape[1])), ky)), axis=0)/dt/42.58e6
+            gx = 1e3*np.concatenate((np.zeros((1, kx.shape[1])), np.diff(kx, axis=0)))/dt/42.58e6
+            gy = 1e3*np.concatenate((np.zeros((1, kx.shape[1])), np.diff(ky, axis=0)))/dt/42.58e6
             g_nom = np.stack((gy, gx), axis=2)
 
             sR = {'T': 0.55}
-            tRR = 0 #-1.5
+            tRR = 3
 
 
         ktraj = np.stack((kx, ky), axis=2)
@@ -144,7 +144,7 @@ def process(connection, config, metadata, N=None, w=None):
         # frames.append(sp.nufft_adjoint(arm.data[:,pre_discard:] * w, ktraj[arm_counter,:,:], oshape=(nchannel, msize, msize)))
 
         endarm = time.perf_counter()
-        print(f"Elapsed time for arm {arm_counter} NUFFT: {(endarm-startarm)*1e3} ms.")
+        #print(f"Elapsed time for arm {arm_counter} NUFFT: {(endarm-startarm)*1e3} ms.")
 
         arm_counter += 1
         if arm_counter == n_unique_angles:
