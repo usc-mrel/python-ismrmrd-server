@@ -21,7 +21,7 @@ defaults = {
     'port':           9002, 
     'outfile':        'out.h5',
     'out_group':      str(datetime.datetime.now()),
-    'config':         'default.xml',
+    'config':         'invertcontrast',
     'config_local':   '',
     'send_waveforms': False,
     'verbose':        False,
@@ -72,6 +72,16 @@ def main(args):
         if not os.path.exists(args.config_local):
             logging.error("Could not find local config file %s", args.config_local)
             return
+
+    localConfigAdditionalText = None
+    if (args.config):
+        configAdditionalFile = args.config + '.json'
+        if os.path.exists(configAdditionalFile):
+            logging.info("Found additional config file %s", configAdditionalFile)
+
+            fid = open(configAdditionalFile, 'r')
+            localConfigAdditionalText = fid.read()
+            fid.close()
 
     dset = h5py.File(args.filename, 'r')
     if not dset:
@@ -191,11 +201,20 @@ def main(args):
 
     # --------------- Send additional config -----------------------
     groups = dset.list()
-    if ('configAdditional' in groups):
-        configAdditionalText = dset._dataset['configAdditional'][0]
-        configAdditionalText = configAdditionalText.decode("utf-8")
-        logging.info("Sending configAdditional found in file: %s", configAdditionalText)
-        connection.send_text(configAdditionalText)
+    if localConfigAdditionalText is None:
+        if ('configAdditional' in groups):
+            configAdditionalText = dset._dataset['configAdditional'][0]
+            configAdditionalText = configAdditionalText.decode("utf-8")
+            logging.info("Sending configAdditional found in file %s:\n%s", args.filename, configAdditionalText)
+            connection.send_text(configAdditionalText)
+        else:
+            # Do nothing -- no additional config in local .json file or in MRD file
+            pass
+    else:
+        if ('configAdditional' in groups):
+            logging.warning("configAdditional found in file %s, but is overriden by local file %s!", args.filename, configAdditionalFile)
+        logging.info("Sending configAdditional found in file %s:\n%s", configAdditionalFile, localConfigAdditionalText)
+        connection.send_text(localConfigAdditionalText)
 
     # --------------- Send waveform data ----------------------
     # TODO: Interleave waveform and other data so they arrive chronologically
