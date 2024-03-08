@@ -127,20 +127,26 @@ class Server:
                 finally:
                     connection.send_close()
             else:
+                usedConfig = config
+                if importlib.util.find_spec(config) is None:
+                    logging.error("Could not find config module '%s' -- falling back to default config: %s", config, self.defaultConfig)
+                    usedConfig = self.defaultConfig
+
                 try:
                     # Load module from file having exact name as config
-                    module = importlib.import_module(config)
-                    logging.info("Starting config %s", config)
+                    module = importlib.import_module(usedConfig)
+                    logging.info("Starting config %s", usedConfig)
                     module.process(connection, configAdditional, metadata)
                 except ImportError as e:
-                    logging.info("Failed to load config '%s' with error:\n  %s", config, e)
-                    logging.info("Falling back to default config: '%s'", self.defaultConfig)
-                    try:
-                        module = importlib.import_module(self.defaultConfig)
-                        logging.info("Starting config %s", self.defaultConfig)
-                        module.process(connection, configAdditional, metadata)
-                    except ImportError as e:
-                        logging.info("Failed to load default config '%s' with error:\n  %s", self.defaultConfig, e)
+                    logging.error("Failed to load config '%s' with error:\n  %s", usedConfig, e)
+                    if usedConfig != self.defaultConfig:
+                        logging.info("Falling back to default config: '%s'", self.defaultConfig)
+                        try:
+                            module = importlib.import_module(self.defaultConfig)
+                            logging.info("Starting config %s", self.defaultConfig)
+                            module.process(connection, configAdditional, metadata)
+                        except ImportError as e:
+                            logging.error("Failed to load default config '%s' with error:\n  %s", self.defaultConfig, e)
 
         except Exception as e:
             logging.exception(e)
