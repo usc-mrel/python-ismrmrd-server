@@ -73,7 +73,12 @@ def process(connection, config, metadata, N=None, w=None):
         # Prepare gradients and variables if GIRF is requested. 
         # Unfortunately, we don't know rotations until the first data, so we can't prepare them yet.
         if APPLY_GIRF:
-            dt = 1e-6 # [s]
+            # We get dwell time too late from MRD, as it comes with acquisition.
+            # So we ask it from the metadata.
+            if "dt" in traj['param']:
+                dt = traj['param']['dt'][0,0][0,0]
+            else:
+                dt = 1e-6 # [s]
 
             patient_position = metadata.measurementInformation.patientPosition.value
             r_PCS2DCS = GIRF.calculate_matrix_pcs_to_dcs(patient_position)
