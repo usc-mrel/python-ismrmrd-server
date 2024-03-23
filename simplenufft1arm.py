@@ -75,9 +75,9 @@ def process(connection, config, metadata, N=None, w=None):
         if APPLY_GIRF:
             # We get dwell time too late from MRD, as it comes with acquisition.
             # So we ask it from the metadata.
-            if "dt" in traj['param']:
+            try:
                 dt = traj['param']['dt'][0,0][0,0]
-            else:
+            except:
                 dt = 1e-6 # [s]
 
             patient_position = metadata.measurementInformation.patientPosition.value
