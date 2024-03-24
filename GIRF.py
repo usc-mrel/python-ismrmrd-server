@@ -1,5 +1,7 @@
 import numpy as np
 from scipy.io import loadmat
+import time
+from scipy.signal.windows import hann
 
 def apply_GIRF(gradients_nominal, dt, R, tRR=0):
     # Handle "nasty" co-opting of R-variable to include field info.
@@ -45,7 +47,7 @@ def apply_GIRF(gradients_nominal, dt, R, tRR=0):
             
             # Smoothing of padding
             H_size = 200
-            H = hanningt(H_size)
+            H = hann(H_size)
             fft_GIRF[:H_size//2] *= H[:H_size//2]
             fft_GIRF[-(H_size//2 - 1):] *= H[H_size//2 + 1:]
             
@@ -63,8 +65,22 @@ def apply_GIRF(gradients_nominal, dt, R, tRR=0):
     Predicted = np.zeros((samples, 3), dtype=float)
     GNom = np.zeros((samples, 3, interleaves), dtype=float)
     GPred = np.zeros((samples, 3, interleaves), dtype=float)
-    kNom = np.zeros((samples, 3, interleaves), dtype=float)
-    kPred = np.zeros((samples, 3, interleaves), dtype=float)
+
+    start = time.perf_counter()
+
+    N = gradients_nominal.shape[0]
+    BW = 1 / dt
+    L1 = round(dtGIRF * l_GIRF / dtSim)
+    dw = 1 / (L1 * dtSim)
+    L2 = round(BW / dw)
+
+    hanning400 = hann(400)
+
+    index_range1 = np.arange(-np.floor(N/2), np.ceil(N/2), dtype=int) + int(np.floor(L1/2)) + 1
+    index_range2 = np.arange(-np.floor(l_GIRF/2), np.ceil(l_GIRF/2), dtype=int) + int(np.floor(L1/2)) + 1
+    index_range3 = np.arange(-np.floor(samples/2), np.ceil(samples/2), dtype=int) + int(np.floor(L2/2)) + 1
+
+    w = np.arange(-np.floor(L1/2), np.ceil(L1/2)) * dw
 
     for l in range(interleaves):
         G0 = gradients_nominal[:, l, :].copy()
@@ -72,74 +88,73 @@ def apply_GIRF(gradients_nominal, dt, R, tRR=0):
         G0 = np.dot(R, G0.T).T
 
         for ax in range(3):
-            L = round(dtGIRF * l_GIRF / dtSim)
-            G = np.zeros(L)
+
+            G = np.zeros(L1)
             
             # SPIRAL OUT
-            N = len(G0)
-            index_range = np.arange(-np.floor(N/2), np.ceil(N/2), dtype=int) + int(np.floor(L/2)) + 1
-            G[index_range] = G0[:, ax]
+            G[index_range1] = G0[:, ax]
 
             # Make a waveform periodic by returning to zero
-            H = G[index_range[-1]] * hanningt(400)
-            G[index_range[-1] + np.arange(1, len(H)//2 + 1)] = H[len(H)//2:]
+            H = G[index_range1[-1]] * hanning400
+            G[index_range1[-1] + np.arange(1, len(H)//2 + 1)] = H[len(H)//2:]
 
-            dw = 1 / (L * dtSim)
-            w = np.arange(-np.floor(L/2), np.ceil(L/2)) * dw
-            I = np.conj(np.fft.fftshift(np.fft.ifft(np.fft.ifftshift(G))))  # I am missing something and the grads are flipped without conj.
+            # I = np.conj(np.fft.fftshift(np.fft.ifft(np.fft.ifftshift(G))))  # I am missing something and the grads are flipped without conj.
+            I = np.fft.fftshift(np.fft.fft(np.fft.ifftshift(G))) # Mysery solved.
 
-            GIRF1 = np.zeros(L, dtype=np.complex64)
+            GIRF1 = np.zeros(L1, dtype=np.complex64)
             
             if dt > dtGIRF:
-                GIRF1 = GIRF[round(l_GIRF/2 - L/2 + 1):round(l_GIRF/2 + L/2), ax]
-                temp = hanningt(10)
+                GIRF1 = GIRF[round(l_GIRF/2 - L1/2 + 1):round(l_GIRF/2 + L1/2), ax]
+                temp = hann(10)
                 GIRF1[0] = 0
                 GIRF1[-1] = 0
                 GIRF1[1:round(len(temp)/2) + 1] *= temp[:round(len(temp)/2)]
                 GIRF1[-round(len(temp)/2):-1] *= temp[round(len(temp)/2) + 1:]
             else:
-                index_range = np.arange(-np.floor(l_GIRF/2), np.ceil(l_GIRF/2)) + np.floor(L/2) + 1
-                GIRF1[index_range.astype(int)] = GIRF[:, ax]
+                GIRF1[index_range2] = GIRF[:, ax]
 
             P = I * GIRF1 * np.exp(1j * ADCshift * 2 * np.pi * w)
 
-            BW = 1 / dt
-            L = round(BW / dw)
-            PredGrad = np.zeros(L, dtype=np.complex64)
-            NomGrad = np.zeros(L, dtype=np.complex64)
-            zeropad = round(abs((len(G) - L) / 2))
+            PredGrad = np.zeros(L2, dtype=np.complex64)
+            # NomGrad = np.zeros(L2, dtype=np.complex64)
+            zeropad = round(abs((L1 - L2) / 2))
 
             PredGrad[zeropad:zeropad + len(P)] = P
-            NomGrad[zeropad:zeropad + len(I)] = I
+            # NomGrad[zeropad:zeropad + len(I)] = I
             
-            PredGrad = np.fft.fftshift(np.fft.ifft(np.fft.ifftshift(PredGrad))) * L
-            NomGrad = np.fft.fftshift(np.fft.ifft(np.fft.ifftshift(NomGrad))) * L
+            PredGrad = np.fft.fftshift(np.fft.ifft(np.fft.ifftshift(PredGrad)))
+            # NomGrad = np.fft.fftshift(np.fft.ifft(np.fft.ifftshift(NomGrad))) * L2
 
-            multiplier = np.where(np.real(PredGrad) > 0, 1, -1)
-            PredGrad = np.abs(PredGrad) * multiplier
+            # multiplier = np.where(np.real(PredGrad) > 0, 1, -1)
+            # PredGrad = np.abs(PredGrad) * multiplier
+            PredGrad = np.real(PredGrad)
 
-            multiplier = np.where(np.real(NomGrad) > 0, 1, -1)
-            NomGrad = np.abs(NomGrad) * multiplier
+            # multiplier = np.where(np.real(NomGrad) > 0, 1, -1)
+            # NomGrad = np.abs(NomGrad) * multiplier
 
-            index_range = np.arange(-np.floor(samples/2), np.ceil(samples/2)) + np.floor(L/2) + 1
-            Nominal[:, ax] = NomGrad[index_range.astype(int)]
-            Predicted[:, ax] = PredGrad[index_range.astype(int)]
+            # Nominal[:, ax] = NomGrad[index_range3]
+            Predicted[:, ax] = PredGrad[index_range3]
 
-        GNom[:, :, l] = np.dot(R.T, Nominal.T).T
-        GPred[:, :, l] = np.dot(R.T, Predicted.T).T
 
-        kNom[:, :, l] = np.cumsum(GNom[:, :, l], axis=0)
-        kPred[:, :, l] = np.cumsum(GPred[:, :, l], axis=0)
+        # GNom[:, :, l] = np.dot(R.T, Nominal.T).T
+        # GPred[:, :, l] = np.dot(R.T, Predicted.T).T
+        GPred[:, :, l] = np.dot(Predicted, R)
+
+    # kNom = np.cumsum(GNom, axis=0)
+    kPred = np.cumsum(GPred, axis=0)
 
     gamma = 2.67522212e8  # Gyromagnetic ratio for 1H [rad/sec/T]
     kPred = 0.01 * (gamma / (2 * np.pi)) * (kPred * 0.01) * dt
-    kNom = 0.01 * (gamma / (2 * np.pi)) * (kNom * 0.01) * dt
+    # kNom = 0.01 * (gamma / (2 * np.pi)) * (kNom * 0.01) * dt
 
     kPred = np.transpose(kPred, (0, 2, 1))
-    kNom = np.transpose(kNom, (0, 2, 1))
+    # kNom = np.transpose(kNom, (0, 2, 1))
     GPred = np.transpose(GPred, (0, 2, 1))
-    GNom = np.transpose(GNom, (0, 2, 1))
+    # GNom = np.transpose(GNom, (0, 2, 1))
 
+    end = time.perf_counter()
+    print(f"Elapsed time during GIRF apply: {end-start} secs.")
+    
     return kPred, GPred
 
 def hanningt(windowLength):
@@ -212,19 +227,35 @@ if __name__ == '__main__':
     # rotMatrixPCSToDCS = calculate_matrix_pcs_to_dcs(patient_position)
     # rotMatrixGCSToDCS = rotMatrixPCSToDCS.dot(rotMatrixGCSToPCS)
     # load example gradients_nominal, rotMatrixGCSToDCS, dt, and resulting GPred from Matlab to compare.
-    girf_matlab = loadmat('girf_matlab')
+    COMPARE_MATLAB = True
+    if COMPARE_MATLAB:
+        girf_matlab = loadmat('girf_matlab')
 
-    gpred_matlab = girf_matlab['g_predicted']
-    kpred_matlab = girf_matlab['k_predicted']
+        gpred_matlab = girf_matlab['g_predicted']
+        kpred_matlab = girf_matlab['k_predicted']
 
-    gradients_nominal = girf_matlab['g_tot']
-    sR = {}
-    sR['R'] = girf_matlab['sR']['R'][0,0]
-    sR['T'] = 0.55
-    tRR = -1.5
-    dt = girf_matlab['dt'][0][0]
-    kPred, GPred = apply_GIRF(gradients_nominal, dt, sR, tRR)
-    TEST_ROT_MTX = True
+        gradients_nominal = girf_matlab['g_tot']
+        sR = {}
+        sR['R'] = girf_matlab['sR']['R'][0,0]
+        sR['T'] = 0.55
+        tRR = -1.5
+        dt = girf_matlab['dt'][0][0]
+        kPred, GPred = apply_GIRF(gradients_nominal, dt, sR, tRR)
+        import matplotlib.pyplot as plt
+        plt.figure()
+        plt.plot(GPred[:,:,0] - gpred_matlab[:,:,0])
+        plt.figure()
+        plt.plot(GPred[:,0,0])
+        plt.plot(gpred_matlab[:,0,0])
+        plt.show()
+
+    PROFILE_GIRF = True
+    if PROFILE_GIRF:
+        prf_ex = np.load('girf_prof.npz')
+        sR = {'R':prf_ex['R'], 'T': 0.55}
+        kPred, GPred = apply_GIRF(prf_ex['g_nom'], prf_ex['dt'], sR, prf_ex['tRR'])
+
+    TEST_ROT_MTX = False
     if TEST_ROT_MTX:
         import ismrmrd
         f = ismrmrd.Dataset('/server/home/btasdelen/MRI_DATA/bodycomp/vol0712_20230926/raw/h5/meas_MID00219_FID07835_fl3d_spiral_vibe_bh_TE0_39_TR5_2_20deg_Qfatsat.h5', '/dataset', False)
