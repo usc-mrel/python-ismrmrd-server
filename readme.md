@@ -297,9 +297,16 @@ A complete working environment of this respository has been compiled into a Dock
 
     The server can be stopped by pressing ``ctrl-c``.
 
-1. <a name='Dockerclient'></a>The Python MRD client can also be run in a Docker container.  If the server is running in a Docker container already, open a new command prompt and run:
+1. <a name='Dockerclient'></a>The Python MRD client can also be run in a Docker container (the internal IP address `host.docker.internal` needs to be manually added to the host in the latest version of Docker). If the server is running in a Docker container already, open a new command prompt and run:
+    
+    In Windows:
     ```
-    docker run --rm -it -v C:\tmp:/tmp kspacekelvin/fire-python /bin/bash
+    docker run --rm -it --add-host=host.docker.internal:host-gateway -v C:\tmp:/tmp kspacekelvin/fire-python /bin/bash
+    ```
+
+    In MacOS/Linux:
+    ```
+    docker run --rm -it --add-host=host.docker.internal:host-gateway -v /tmp:/tmp kspacekelvin/fire-python /bin/bash
     ```
 
     In this invocation, the ``/bin/bash`` argument is used to start the container with a bash shell prompt instead of starting the Python MRD server.  The client can be called by running:
