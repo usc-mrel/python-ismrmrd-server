@@ -8,10 +8,6 @@
 		"cacheFrom":  "docker.io/kspacekelvin/fire-python-devcon"
 	},
 
-	"settings": { 
-		"terminal.integrated.defaultProfile.linux": "bash"
-	},
-
 	// To enable your local GPUs in container if they are on enabled by default
 	// "runArgs": [ "--gpus=all" ],
 
@@ -20,13 +16,23 @@
 		9002
 	],
 
-	// Use 'postCreateCommand' to run commands after the container is created.
-	// "postCreateCommand": "uname -a",
+	// Default setting for Windows changes files to CRLF, so match this to avoid all files
+	// being marked as changed.  Could be disabled for non-Windows hosts
+	"postCreateCommand": "git config --global core.autocrlf true",
 
-	// Add the IDs of extensions you want installed when the container is created.
-	"extensions": [
-		"ms-python.python",
-		"ms-toolsai.jupyter",
-		"ms-python.vscode-pylance"
-	]
+	"customizations": {
+		"vscode": {
+			// Add the IDs of extensions you want installed when the container is created.
+			"extensions": [
+				"ms-python.debugpy",
+				"ms-python.python",
+				"ms-python.vscode-pylance",
+				"ms-toolsai.jupyter"
+			],
+
+			"settings": { 
+				"terminal.integrated.defaultProfile.linux": "bash"
+			}
+		}
+	}
 }
