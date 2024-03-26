@@ -73,13 +73,14 @@
 
     In MATLAB, the [ISMRMRD](https://github.com/ismrmrd/ismrmrd) library contains helper classes to load and view MRD files.  The files can also be read using MATLAB’s built-in HDF functions:
     ```
-
     img = h5read('/tmp/phantom_img.h5', '/dataset/image_0/data');
     figure, imagesc(img), axis image, colormap(gray)
     ```
 
 ###  1.2. <a name='Creatingacustomreconstructionanalysismodule'></a>Creating a custom reconstruction/analysis module
-The MRD server has a modular design to allow for easy integration of custom reconstruction or image analysis code.  
+The MRD server has a modular design to allow for easy integration of custom reconstruction or image analysis code.  The config that is passed by the client (e.g. the `--config` (`-c`) argument in [client.py](client.py)) is interpreted by the server as the "module" that should be executed to parse the incoming data.  For example, a config of `invertcontrast` will select [invertcontrast.py](invertcontrast.py) as the module to be run.  Additional modules can be added simply be creating the appropriately named .py file in the Python path (e.g. the current folder).
+
+If a file/module corresponding to the selecting config cannot be found, the server will fall back to a default config.  The default config can be provided to [main.py](main.py) using the `--defaultConfig` (`-d`) argument.  It is recommended that the default config argument be set in the `CMD` line of the Dockerfile when building an image to indicate the intended config to be run.
 
 ####  1.2.1. <a name='Addingarawk-spacefilter'></a>Adding a raw k-space filter
 In this example, a Hanning filter is applied to raw k-space data.
@@ -287,7 +288,7 @@ A complete working environment of this respository has been compiled into a Dock
     ```
     -p=9002:9002      Allows access to port 9002 inside the container from port 9002 on the host.  
                       Change the first number to change the host port.
-    -it               Enables “interactive” mode with a pseudo-tty.  This is necessary for “ctrl-c” to
+    -it               Enables "interactive" mode with a pseudo-tty.  This is necessary for "ctrl-c" to
                       stop the program.
     --rm              Remove the container after it is stopped
     -v C:\tmp:/tmp    Maps the C:\tmp folder on the host to /tmp inside the container.
@@ -334,21 +335,13 @@ This code is designed to provide a reference implementation of an MRD client/ser
 
 - [main.py](main.py):  This is the main program, parsing input arguments and starting a "Server" class instance.
 
-- [server.py](server.py):  The “Server” class determines which reconstruction algorithm (e.g. "simplefft" or "invertcontrast") is used for the incoming data, based on the requested config information.
+- [server.py](server.py):  The "Server" class determines which reconstruction algorithm (e.g. "simplefft" or "invertcontrast") is used for the incoming data, based on the requested config information.
 
-- [connection.py](connection.py): The “Connection” class handles network communications to/from the client, parsing streaming messages of different types, as detailed in the section on MR Data Message Format.  The connection class also saves incoming data to MRD files if this option is selected.
+- [connection.py](connection.py): The "Connection" class handles network communications to/from the client, parsing streaming messages of different types, as detailed in the [MRD documentation](https://ismrmrd.readthedocs.io/en/latest/mrd_messages.html).  The connection class also saves incoming data to MRD files if this option is selected.
 
 - [constants.py](constants.py): This file contains constants that define the message types of the MRD streaming data format.
 
 - [mrdhelper.py](mrdhelper.py): This class contains helper functions for commonly used MRD tasks such as copying header information from raw data to image data and working with image metadata.
-
-- [simplefft.py](simplefft.py): This file contains code for performing a rudimentary image reconstruction from raw data, consisting of a Fourier transform, sum-of-squares coil combination, signal intensity normalization, and removal of phase oversampling.
-
-- [invertcontrast.py](invertcontrast.py): This program accepts both incoming raw data as well as image data.  The image contrast is inverted and images are sent back to the client.
-
-- [rgb.py](rgb.py): This program accepts incoming image data, applies a jet colormap, and sends RGB images back to the client.
-
-- [analyzeflow.py](analyzeflow.py): This program accepts velocity phase contrast image data and performs basic masking.
 
 - [client.py](client.py): This script can be used to function as the client for an MRD streaming session, sending data from a file to a server and saving the received images to a different file.  Additional description of its usage is provided below.
 
@@ -359,6 +352,15 @@ This code is designed to provide a reference implementation of an MRD client/ser
 - [mrd2dicom.py](mrd2dicom.py): This program converts an MRD image .h5 file to a folder of DICOM images.
 
 - [mrd2gif.py](mrd2gif.py): This program converts an MRD image .h5 file into an animated GIF for quick previews.
+
+There are several example "modules" that can be selected by specifying their name via the config (`-c`) argument:
+- [invertcontrast.py](invertcontrast.py): This program accepts both incoming raw data as well as image data.  The image contrast is inverted and images are sent back to the client.
+
+- [simplefft.py](simplefft.py): This file contains code for performing a rudimentary image reconstruction from raw data, consisting of a Fourier transform, sum-of-squares coil combination, signal intensity normalization, and removal of phase oversampling.
+
+- [rgb.py](rgb.py): This program accepts incoming image data, applies a jet colormap, and sends RGB images back to the client.
+
+- [analyzeflow.py](analyzeflow.py): This program accepts velocity phase contrast image data and performs basic masking.
 
 ##  4. <a name='Savingincomingdata'></a>Saving incoming data
 It may be desirable for the MRD server to save a copy of incoming data from the client.  For example, if the client is an MRI scanner, then the saved data can be used for offline simulations at a later time.  This may be particularly useful when the MRI scanner client is sending image data, as images are not stored in a scanner's raw data file and would otherwise require offline simulation of the MRI scanner reconstruction as well.

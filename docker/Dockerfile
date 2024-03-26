@@ -95,7 +95,7 @@ RUN find /opt/code/python-ismrmrd-server -name "*.sh" -exec chmod +x {} \;
 # Set the starting directory so that code can use relative paths
 WORKDIR /opt/code/python-ismrmrd-server
 
-CMD [ "python3", "/opt/code/python-ismrmrd-server/main.py", "-v", "-H=0.0.0.0", "-p=9002", "-l=/tmp/python-ismrmrd-server.log"]
+CMD [ "python3", "/opt/code/python-ismrmrd-server/main.py", "-v", "-H=0.0.0.0", "-p=9002", "-l=/tmp/python-ismrmrd-server.log", "--defaultConfig=invertcontrast"]
 
 # Replace the above CMD with this ENTRYPOINT to allow allow "docker stop"
 # commands to be passed to the server.  This is useful for deployments, but
