@@ -2,6 +2,7 @@ import numpy as np
 from scipy.io import loadmat
 import time
 from scipy.signal.windows import hann
+from scipy.fft import fft, fftshift, ifft, ifftshift
 
 def apply_GIRF(gradients_nominal, dt, R, tRR=0):
     # Handle "nasty" co-opting of R-variable to include field info.
@@ -61,9 +62,9 @@ def apply_GIRF(gradients_nominal, dt, R, tRR=0):
 
     ADCshift = 0.85e-6 + 0.5 * dt + tRR * dt  # NCO Clock shift
 
-    Nominal = np.zeros((samples, 3), dtype=float)
+    # Nominal = np.zeros((samples, 3), dtype=float)
     Predicted = np.zeros((samples, 3), dtype=float)
-    GNom = np.zeros((samples, 3, interleaves), dtype=float)
+    # GNom = np.zeros((samples, 3, interleaves), dtype=float)
     GPred = np.zeros((samples, 3, interleaves), dtype=float)
 
     start = time.perf_counter()
@@ -81,7 +82,6 @@ def apply_GIRF(gradients_nominal, dt, R, tRR=0):
     index_range3 = np.arange(-np.floor(samples/2), np.ceil(samples/2), dtype=int) + int(np.floor(L2/2)) + 1
 
     w = np.arange(-np.floor(L1/2), np.ceil(L1/2)) * dw
-
     for l in range(interleaves):
         G0 = gradients_nominal[:, l, :].copy()
         G0 = np.concatenate((G0, np.zeros((gradients_nominal.shape[0], 1))), axis=1)
@@ -99,7 +99,7 @@ def apply_GIRF(gradients_nominal, dt, R, tRR=0):
             G[index_range1[-1] + np.arange(1, len(H)//2 + 1)] = H[len(H)//2:]
 
             # I = np.conj(np.fft.fftshift(np.fft.ifft(np.fft.ifftshift(G))))  # I am missing something and the grads are flipped without conj.
-            I = np.fft.fftshift(np.fft.fft(np.fft.ifftshift(G))) # Mysery solved.
+            I = fftshift(fft(ifftshift(G))) # Mysery solved.
 
             GIRF1 = np.zeros(L1, dtype=np.complex64)
             
@@ -122,7 +122,8 @@ def apply_GIRF(gradients_nominal, dt, R, tRR=0):
             PredGrad[zeropad:zeropad + len(P)] = P
             # NomGrad[zeropad:zeropad + len(I)] = I
             
-            PredGrad = np.fft.fftshift(np.fft.ifft(np.fft.ifftshift(PredGrad)))
+            PredGrad = fftshift(ifft(ifftshift(PredGrad)))
+
             # NomGrad = np.fft.fftshift(np.fft.ifft(np.fft.ifftshift(NomGrad))) * L2
 
             # multiplier = np.where(np.real(PredGrad) > 0, 1, -1)
