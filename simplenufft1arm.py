@@ -9,6 +9,7 @@ import ctypes
 import mrdhelper
 from datetime import datetime
 import time
+import json
 
 from scipy.io import loadmat
 from sigpy.linop import NUFFT
@@ -53,8 +54,14 @@ def process(connection, config, metadata, N=None, w=None):
     logging.info("Config: \n%s", config)
     logging.info("Metadata: \n%s", metadata)
 
-    n_arm_per_frame = 34
-    APPLY_GIRF = True
+    # We now read these parameters from json file, so that we won't have to keep restarting the server when we change them.
+    with open('spiralrt_config.json') as jf:
+        cfg = json.load(jf)
+        n_arm_per_frame = cfg['arms_per_frame']
+        APPLY_GIRF = cfg['apply_girf']
+        print(f'Arms per frame: {n_arm_per_frame}, Apply GIRF?: {APPLY_GIRF}')
+        # n_arm_per_frame = 89
+        # APPLY_GIRF = True
 
     if N is None:
         # start = time.perf_counter()
@@ -85,13 +92,13 @@ def process(connection, config, metadata, N=None, w=None):
 
             gx = 1e3*np.concatenate((np.zeros((1, kx.shape[1])), np.diff(kx, axis=0)))/dt/42.58e6
             gy = 1e3*np.concatenate((np.zeros((1, kx.shape[1])), np.diff(ky, axis=0)))/dt/42.58e6
-            g_nom = np.stack((gy, gx), axis=2)
+            g_nom = np.stack((gx, -gy), axis=2)
 
             sR = {'T': 0.55}
-            tRR = 3
+            tRR = 3*1e-6/dt
 
 
-        ktraj = np.stack((kx, ky), axis=2)
+        ktraj = np.stack((kx, -ky), axis=2)
 
         # find max ktraj value
         kmax = np.max(np.abs(kx + 1j * ky))
@@ -126,19 +133,23 @@ def process(connection, config, metadata, N=None, w=None):
 
         # First arm came, if GIRF is requested, correct trajectories and reupload.
         if (arm.idx.kspace_encode_step_1 == 0) and APPLY_GIRF:
+            r_GCS2RCS = np.array(  [[0,    1,   0],  # [PE]   [0 1 0] * [r]
+                                    [1,    0,   0],  # [RO] = [1 0 0] * [c]
+                                    [0,    0,   1]]) # [SL]   [0 0 1] * [s]
             r_GCS2PCS = np.array([arm.phase_dir, -np.array(arm.read_dir), arm.slice_dir])
             r_GCS2DCS = r_PCS2DCS.dot(r_GCS2PCS)
-            sR['R'] = r_GCS2DCS
+            sR['R'] = r_GCS2DCS.dot(r_GCS2RCS)
             k_pred, _ = GIRF.apply_GIRF(g_nom, dt, sR, tRR)
-            k_pred = np.flip(k_pred[:,:,0:2], axis=2) # Drop the z
+            # k_pred = np.flip(k_pred[:,:,0:2], axis=2) # Drop the z
+            k_pred = k_pred[:,:,0:2] # Drop the z
+
             kmax = np.max(np.abs(k_pred[:,:,0] + 1j * k_pred[:,:,1]))
             k_pred = np.swapaxes(k_pred, 0, 1)
             k_pred = 0.5 * (k_pred / kmax) * msize
             coord_gpu = sp.to_device(k_pred, device=device) # Replace  the original k-space
-
             
 
-        startarm = time.perf_counter()
+        # startarm = time.perf_counter()
         adata = sp.to_device(arm.data[:,pre_discard:], device=device)
 
         with device:
