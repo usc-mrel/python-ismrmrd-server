@@ -3,7 +3,7 @@
 
 	"build": {
 		"dockerfile": "../docker/Dockerfile",
-		"target":     "python_mrd_devcontainer",
+		"target":     "python-mrd-devcontainer",
 		"context":    "../",
 		"cacheFrom":  "docker.io/kspacekelvin/fire-python-devcon"
 	},
