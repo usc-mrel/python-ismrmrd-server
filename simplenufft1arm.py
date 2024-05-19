@@ -1,22 +1,22 @@
 
 import ismrmrd
-import os
-import itertools
+# import os
+# import itertools
 import logging
 import numpy as np
-import numpy.fft as fft
+# import numpy.fft as fft
 import ctypes
 import mrdhelper
-from datetime import datetime
+# from datetime import datetime
 import time
 import json
 
 from scipy.io import loadmat
-from sigpy.linop import NUFFT
+# from sigpy.linop import NUFFT
 from scipy.ndimage import rotate
 import sigpy as sp
 from sigpy import fourier
-import cupy as cp
+# import cupy as cp
 import GIRF
 # Folder for debug output files
 debugFolder = "/tmp/share/debug"
@@ -54,14 +54,18 @@ def process(connection, config, metadata, N=None, w=None):
     logging.info("Config: \n%s", config)
     logging.info("Metadata: \n%s", metadata)
 
+    start = time.perf_counter()
     # We now read these parameters from json file, so that we won't have to keep restarting the server when we change them.
     with open('spiralrt_config.json') as jf:
         cfg = json.load(jf)
         n_arm_per_frame = cfg['arms_per_frame']
         APPLY_GIRF = cfg['apply_girf']
-        print(f'Arms per frame: {n_arm_per_frame}, Apply GIRF?: {APPLY_GIRF}')
-        # n_arm_per_frame = 89
-        # APPLY_GIRF = True
+        gpu_device = cfg['gpu_device']
+    end = time.perf_counter()
+    print(f"Elapsed time during json config read: {end-start} secs.")
+    # n_arm_per_frame = 89
+    # APPLY_GIRF = True
+    print(f'Arms per frame: {n_arm_per_frame}, Apply GIRF?: {APPLY_GIRF}')
 
     if N is None:
         # start = time.perf_counter()
@@ -124,12 +128,13 @@ def process(connection, config, metadata, N=None, w=None):
     frames = []
     arm_counter = 0
     rep_counter = 0
-    device = sp.Device(1)
+    device = sp.Device(gpu_device)
 
     coord_gpu = sp.to_device(ktraj, device=device)
     w_gpu = sp.to_device(w, device=device)
     # for group in conditionalGroups(connection, lambda acq: not acq.is_flag_set(ismrmrd.ACQ_IS_PHASECORR_DATA), lambda acq: ((acq.idx.kspace_encode_step_1+1) % interleaves == 0)):
     for arm in connection:
+        start_iter = time.perf_counter()
 
         # First arm came, if GIRF is requested, correct trajectories and reupload.
         if (arm.idx.kspace_encode_step_1 == 0) and APPLY_GIRF:
@@ -149,7 +154,7 @@ def process(connection, config, metadata, N=None, w=None):
             coord_gpu = sp.to_device(k_pred, device=device) # Replace  the original k-space
             
 
-        # startarm = time.perf_counter()
+        startarm = time.perf_counter()
         adata = sp.to_device(arm.data[:,pre_discard:], device=device)
 
         with device:
@@ -160,23 +165,30 @@ def process(connection, config, metadata, N=None, w=None):
         # frames.append(sp.nufft_adjoint(arm.data[:,pre_discard:] * w, ktraj[arm_counter,:,:], oshape=(nchannel, msize, msize)))
 
         endarm = time.perf_counter()
-        #print(f"Elapsed time for arm {arm_counter} NUFFT: {(endarm-startarm)*1e3} ms.")
+        # print(f"Elapsed time for arm {arm_counter} NUFFT: {(endarm-startarm)*1e3} ms.")
 
         arm_counter += 1
         if arm_counter == n_unique_angles:
             arm_counter = 0
 
         if ((arm.idx.kspace_encode_step_1+1) % n_arm_per_frame) == 0:
-            # start = time.perf_counter()
+            start = time.perf_counter()
 
             image = process_group(arm, frames, device, rep_counter, config, metadata)
-            # end = time.perf_counter()
+            end = time.perf_counter()
 
             # print(f"Elapsed time for frame processing: {end-start} secs.")
             frames = []
             logging.debug("Sending image to client:\n%s", image)
+            start = time.perf_counter()
             connection.send_image(image)
+            end = time.perf_counter()
+
+            print(f"Elapsed time for frame sending: {end-start} secs.")
             rep_counter += 1
+        end_iter = time.perf_counter()
+        # print(f"Elapsed time for per iteration: {end_iter-start_iter} secs.")
+
 
 
 def process_group(group, frames, device, rep, config, metadata):
@@ -186,7 +198,7 @@ def process_group(group, frames, device, rep, config, metadata):
         for g in frames:
             data += g
         # Sum of squares coil combination
-        data = np.abs(np.flip(data, axis=(1,2)))
+        data = np.abs(np.flip(data, axis=(1,)))
         data = np.square(data)
         data = np.sum(data, axis=0)
         data = np.sqrt(data)
