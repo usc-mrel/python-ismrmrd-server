@@ -32,7 +32,7 @@ RUN cd /opt/code && \
 RUN cd /usr/local/lib && tar -czvf libismrmrd.tar.gz libismrmrd*
 
 # ----- 2. Create a devcontainer without all of the build dependencies of MRD -----
-FROM python:3.12.0-slim AS python_mrd_devcontainer
+FROM python:3.12.0-slim AS python-mrd-devcontainer
 
 LABEL org.opencontainers.image.description="Python MRD Image Reconstruction and Analysis Server"
 LABEL org.opencontainers.image.url="https://github.com/kspaceKelvin/python-ismrmrd-server"
@@ -70,7 +70,7 @@ RUN apt-get clean && \
     rm -rf /root/.cache/pip
 
 # ----- 3. Copy deployed code into the devcontainer for deployment -----
-FROM python_mrd_devcontainer AS python_mrd_runtime
+FROM python-mrd-devcontainer AS python-mrd-runtime
 
 # If building from the GitHub repo, uncomment the below section, open a command
 # prompt in the folder containing this Dockerfile and run the command:
@@ -95,7 +95,7 @@ RUN find /opt/code/python-ismrmrd-server -name "*.sh" -exec chmod +x {} \;
 # Set the starting directory so that code can use relative paths
 WORKDIR /opt/code/python-ismrmrd-server
 
-CMD [ "python3", "/opt/code/python-ismrmrd-server/main.py", "-v", "-H=0.0.0.0", "-p=9002", "-l=/tmp/python-ismrmrd-server.log"]
+CMD [ "python3", "/opt/code/python-ismrmrd-server/main.py", "-v", "-H=0.0.0.0", "-p=9002", "-l=/tmp/python-ismrmrd-server.log", "--defaultConfig=invertcontrast"]
 
 # Replace the above CMD with this ENTRYPOINT to allow allow "docker stop"
 # commands to be passed to the server.  This is useful for deployments, but

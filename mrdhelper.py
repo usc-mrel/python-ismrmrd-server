@@ -142,6 +142,35 @@ def extract_minihead_param(miniHead, name, strType):
     else:
         return values[0]
 
+def get_json_param(config, field, type=None):
+    """Get a field from the JSON additional config with optional type casting"""
+    if not isinstance(config, dict):
+        return None
+
+    if not 'parameters' in config:
+        return None
+
+    if not field in config['parameters']:
+        return None
+
+    value = config['parameters'][field]
+
+    if type is None:
+        return value
+    elif type == 'int':
+        return int(value)
+    elif (type == 'float') or (type == 'double'):
+        return float(value)
+    elif (type == 'string') or (type == 'choice'):
+        return str(value)
+    elif (type == 'bool') or (type == 'boolean'):
+        if isinstance(value, bool):
+            return value
+        else:
+            return ('true' in value.lower())
+    else:
+        raise Exception("'type' must be None (no type conversion), int, float, string, or bool")
+
 def create_roi(x, y, rgb = (1, 0, 0), thickness = 1, style = 0, visibility = 1):
     """
     Create an MRD-formatted ROI

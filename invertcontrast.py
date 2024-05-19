@@ -337,6 +337,7 @@ def process_image(images, connection, config, metadata):
         if ('parameters' in config) and ('options' in config['parameters']):
             # Example for sending ROIs
             if config['parameters']['options'] == 'roi':
+                logging.info("Creating ROI_example")
                 tmpMeta['ROI_example'] = create_example_roi(data.shape)
 
             # Example for setting colormap

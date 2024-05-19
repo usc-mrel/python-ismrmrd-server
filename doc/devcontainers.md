@@ -20,6 +20,11 @@ Traditional development involves the local installation of libraries, packages, 
 
 1. The [RunClientServerRecon.ipynb](RunClientServerRecon.ipynb) Python notebook contains code snippets for generating an input raw data set, running the client, and displaying the results.  Alternatively, the [client.py](client.py) can be run the Terminal window.  Note that files (e.g. datasets) placed in this repo's folder will automatically be mapped inside the dev container and output files generated inside this repo's folder will also be visible on the host file system.
 
+Note: The Docker devcontainer can also be built manually by opening a terminal in the python-ismrmrd-server folder and running:
+```
+docker build --no-cache -t python-mrd-devcontainer --target python-mrd-devcontainer -f docker/Dockerfile ./
+```
+
 ## GitHub Codespaces
 [Codespaces](https://github.com/features/codespaces) is a feature of GitHub that allows for dev containers to be configured and run in the cloud.  Codespaces can be accessible via a browser, running a web-based version of Visual Studio Code or Jupyter.  A codespace can also be opened up in a native VS Code instance running locally for faster performnce.  Codespaces are free for registerd GitHub users for up to 60 hours/month as of December 2023 with billable additional usage.
 

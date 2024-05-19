@@ -7,7 +7,7 @@
         // Start server
         {
             "name": "Start server",
-            "type": "python",
+            "type": "debugpy",
             "request": "launch",
             "program": "${workspaceFolder}/main.py",
             "args": [
@@ -23,7 +23,7 @@
         // Run client
         {
             "name": "Run client",
-            "type": "python",
+            "type": "debugpy",
             "request": "launch",
             "program": "${workspaceFolder}/client.py",
             "args": [
