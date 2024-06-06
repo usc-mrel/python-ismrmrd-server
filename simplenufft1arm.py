@@ -59,6 +59,7 @@ def process(connection, config, metadata, N=None, w=None):
     with open('spiralrt_config.json') as jf:
         cfg = json.load(jf)
         n_arm_per_frame = cfg['arms_per_frame']
+        window_shift = cfg['window_shift']
         APPLY_GIRF = cfg['apply_girf']
         gpu_device = cfg['gpu_device']
     end = time.perf_counter()
@@ -132,6 +133,7 @@ def process(connection, config, metadata, N=None, w=None):
 
     coord_gpu = sp.to_device(ktraj, device=device)
     w_gpu = sp.to_device(w, device=device)
+
     # for group in conditionalGroups(connection, lambda acq: not acq.is_flag_set(ismrmrd.ACQ_IS_PHASECORR_DATA), lambda acq: ((acq.idx.kspace_encode_step_1+1) % interleaves == 0)):
     for arm in connection:
         start_iter = time.perf_counter()
@@ -171,14 +173,14 @@ def process(connection, config, metadata, N=None, w=None):
         if arm_counter == n_unique_angles:
             arm_counter = 0
 
-        if ((arm.idx.kspace_encode_step_1+1) % n_arm_per_frame) == 0:
+        if ((arm.idx.kspace_encode_step_1+1) % window_shift) == 0 and ((arm.idx.kspace_encode_step_1+1) >= n_arm_per_frame):
             start = time.perf_counter()
 
             image = process_group(arm, frames, device, rep_counter, config, metadata)
             end = time.perf_counter()
 
             # print(f"Elapsed time for frame processing: {end-start} secs.")
-            frames = []
+            del frames[:window_shift]
             logging.debug("Sending image to client:\n%s", image)
             start = time.perf_counter()
             connection.send_image(image)
@@ -186,6 +188,7 @@ def process(connection, config, metadata, N=None, w=None):
 
             print(f"Elapsed time for frame sending: {end-start} secs.")
             rep_counter += 1
+
         end_iter = time.perf_counter()
         # print(f"Elapsed time for per iteration: {end_iter-start_iter} secs.")
 
