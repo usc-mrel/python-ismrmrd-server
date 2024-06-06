@@ -4,6 +4,7 @@ import ismrmrd
 # import itertools
 import logging
 import numpy as np
+import numpy.typing as npt
 # import numpy.fft as fft
 import ctypes
 import mrdhelper
@@ -18,6 +19,8 @@ import sigpy as sp
 from sigpy import fourier
 # import cupy as cp
 import GIRF
+import mrinufft
+import coils
 # Folder for debug output files
 debugFolder = "/tmp/share/debug"
 
@@ -61,12 +64,17 @@ def process(connection, config, metadata, N=None, w=None):
         n_arm_per_frame = cfg['arms_per_frame']
         APPLY_GIRF = cfg['apply_girf']
         gpu_device = cfg['gpu_device']
+        coil_combine = cfg['coil_combine']
+
     end = time.perf_counter()
     print(f"Elapsed time during json config read: {end-start} secs.")
     # n_arm_per_frame = 89
     # APPLY_GIRF = True
     print(f'Arms per frame: {n_arm_per_frame}, Apply GIRF?: {APPLY_GIRF}')
 
+    # Choose your NUFFT backend (installed independly from the package)
+    NufftOperator = mrinufft.get_operator("cufinufft")
+    nufft = []
     if N is None:
         # start = time.perf_counter()
         # get the k-space trajectory based on the metadata hash.
@@ -121,6 +129,11 @@ def process(connection, config, metadata, N=None, w=None):
         # end = time.perf_counter()
         # logging.debug("Elapsed time during recon prep: %f secs.", end-start)
         # print(f"Elapsed time during recon prep: {end-start} secs.")
+        for ii in range(n_unique_angles):
+            # And create the associated operator.
+            nufft.append(NufftOperator(
+                ktraj[ii,:,:]/msize, shape=[msize, msize], density=np.squeeze(w), n_coils=metadata.acquisitionSystemInformation.receiverChannels, squeeze_dims=True
+            ))
     else:
         interleaves = N.ishape[0]
 
@@ -132,6 +145,8 @@ def process(connection, config, metadata, N=None, w=None):
 
     coord_gpu = sp.to_device(ktraj, device=device)
     w_gpu = sp.to_device(w, device=device)
+
+    sens = []
     # for group in conditionalGroups(connection, lambda acq: not acq.is_flag_set(ismrmrd.ACQ_IS_PHASECORR_DATA), lambda acq: ((acq.idx.kspace_encode_step_1+1) % interleaves == 0)):
     for arm in connection:
         start_iter = time.perf_counter()
@@ -152,6 +167,12 @@ def process(connection, config, metadata, N=None, w=None):
             k_pred = np.swapaxes(k_pred, 0, 1)
             k_pred = 0.5 * (k_pred / kmax) * msize
             coord_gpu = sp.to_device(k_pred, device=device) # Replace  the original k-space
+
+        if (arm.idx.kspace_encode_step_1 == 0) and (arm.data.shape[1]-pre_discard/2) == coord_gpu.shape[1]/2:
+            # Check if the OS is removed. Should only happen with offline recon.
+            coord_gpu = coord_gpu[:,::2,:]
+            w_gpu = w_gpu[:,::2]
+            pre_discard = int(pre_discard//2)
             
 
         startarm = time.perf_counter()
@@ -162,10 +183,11 @@ def process(connection, config, metadata, N=None, w=None):
                     adata*w_gpu,
                     coord_gpu[arm_counter,:,:],
                     (nchannel, msize, msize)))
+            # frames.append(nufft[arm_counter].adj_op(adata))
         # frames.append(sp.nufft_adjoint(arm.data[:,pre_discard:] * w, ktraj[arm_counter,:,:], oshape=(nchannel, msize, msize)))
 
         endarm = time.perf_counter()
-        # print(f"Elapsed time for arm {arm_counter} NUFFT: {(endarm-startarm)*1e3} ms.")
+        print(f"Elapsed time for arm {arm_counter} NUFFT: {(endarm-startarm)*1e3} ms.")
 
         arm_counter += 1
         if arm_counter == n_unique_angles:
@@ -173,8 +195,10 @@ def process(connection, config, metadata, N=None, w=None):
 
         if ((arm.idx.kspace_encode_step_1+1) % n_arm_per_frame) == 0:
             start = time.perf_counter()
+            if coil_combine == "adaptive" and rep_counter == 0:
+                sens = sp.to_device(process_csm(frames), device=device)
 
-            image = process_group(arm, frames, device, rep_counter, config, metadata)
+            image = process_group(arm, frames, sens, device, rep_counter, config, metadata)
             end = time.perf_counter()
 
             # print(f"Elapsed time for frame processing: {end-start} secs.")
@@ -190,19 +214,32 @@ def process(connection, config, metadata, N=None, w=None):
         # print(f"Elapsed time for per iteration: {end_iter-start_iter} secs.")
 
 
+def process_csm(frames):
+    data = np.zeros(frames[0].shape, dtype=np.complex128)
+    for g in frames:
+        data += sp.to_device(g)
+    (csm_est, rho) = coils.calculate_csm_inati_iter(data, smoothing=5)
 
-def process_group(group, frames, device, rep, config, metadata):
+    return csm_est
+
+
+def process_group(group, frames: list, sens: npt.ArrayLike, device, rep, config, metadata):
     xp = device.xp
     with device:
         data = xp.zeros(frames[0].shape, dtype=np.complex128)
         for g in frames:
             data += g
-        # Sum of squares coil combination
-        data = np.abs(np.flip(data, axis=(1,)))
-        data = np.square(data)
-        data = np.sum(data, axis=0)
-        data = np.sqrt(data)
 
+        if sens.__len__() == 0:
+            # Sum of squares coil combination
+            data = np.abs(np.flip(data, axis=(1,)))
+            data = np.square(data)
+            data = np.sum(data, axis=0)
+            data = np.sqrt(data)
+        else:
+            # Coil combine
+            data = np.flip(np.abs(np.sum(np.conj(sens) * data, axis=0)), axis=(0,))
+            
         # Determine max value (12 or 16 bit)
         BitsStored = 12
         if (mrdhelper.get_userParameterLong_value(metadata, "BitsStored") is not None):
