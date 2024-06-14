@@ -1,0 +1,10 @@
+[reconstruction]
+"apply_girf"        = true
+"arms_per_frame"    = 7
+"num_recon_frames"  = 20
+"reg_lambda"        = 0.0001
+"num_iter"          = 90
+"window_shift"      = 17
+"gpu_device"        = 1
+"coil_combine"      = "rssq"
+"BART_TOOLBOX_PATH" = "/server/home/btasdelen/bart"
