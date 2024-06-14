@@ -6,3 +6,7 @@
 *.tar
 *.zip
 data/
+seq_meta/
+testdata/
+.vscode/
+configs/

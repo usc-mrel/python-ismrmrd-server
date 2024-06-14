@@ -10,7 +10,7 @@ import ctypes
 import mrdhelper
 # from datetime import datetime
 import time
-import json
+import rtoml
 
 from scipy.io import loadmat
 # from sigpy.linop import NUFFT
@@ -24,32 +24,19 @@ import coils
 # Folder for debug output files
 debugFolder = "/tmp/share/debug"
 
-def groups(iterable, predicate):
-    group = []
-    for item in iterable:
-        group.append(item)
+start = time.perf_counter()
+# We now read these parameters from toml file, so that we won't have to keep restarting the server when we change them.
+with open('configs/rtspiral_vs_config.toml') as jf:
+    cfg = rtoml.load(jf)
+    n_arm_per_frame = cfg['reconstruction']['arms_per_frame']
+    window_shift    = cfg['reconstruction']['window_shift']
+    APPLY_GIRF      = cfg['reconstruction']['apply_girf']
+    gpu_device      = cfg['reconstruction']['gpu_device']
+    coil_combine    = cfg['reconstruction']['coil_combine']
 
-        if predicate(item):
-            yield group
-            group = []
 
-
-def conditionalGroups(iterable, predicateAccept, predicateFinish):
-    group = []
-    try:
-        for item in iterable:
-            if item is None:
-                break
-
-            if predicateAccept(item):
-                group.append(item)
-
-            if predicateFinish(item):
-                yield group
-                group = []
-    finally:
-        iterable.send_close()
-
+end = time.perf_counter()
+print(f"Elapsed time during json config read: {end-start} secs.")
 
 def process(connection, config, metadata, N=None, w=None):
     logging.disable(logging.CRITICAL)
@@ -57,20 +44,6 @@ def process(connection, config, metadata, N=None, w=None):
     logging.info("Config: \n%s", config)
     logging.info("Metadata: \n%s", metadata)
 
-    start = time.perf_counter()
-    # We now read these parameters from json file, so that we won't have to keep restarting the server when we change them.
-    with open('spiralrt_config.json') as jf:
-        cfg = json.load(jf)
-        n_arm_per_frame = cfg['arms_per_frame']
-        window_shift = cfg['window_shift']
-        APPLY_GIRF = cfg['apply_girf']
-        gpu_device = cfg['gpu_device']
-        coil_combine = cfg['coil_combine']
-
-    end = time.perf_counter()
-    print(f"Elapsed time during json config read: {end-start} secs.")
-    # n_arm_per_frame = 89
-    # APPLY_GIRF = True
     print(f'Arms per frame: {n_arm_per_frame}, Apply GIRF?: {APPLY_GIRF}')
 
     # Choose your NUFFT backend (installed independly from the package)
@@ -149,8 +122,9 @@ def process(connection, config, metadata, N=None, w=None):
 
     sens = []
 
-    # for group in conditionalGroups(connection, lambda acq: not acq.is_flag_set(ismrmrd.ACQ_IS_PHASECORR_DATA), lambda acq: ((acq.idx.kspace_encode_step_1+1) % interleaves == 0)):
     for arm in connection:
+        if arm is None:
+            break
         start_iter = time.perf_counter()
 
         # First arm came, if GIRF is requested, correct trajectories and reupload.
@@ -185,7 +159,7 @@ def process(connection, config, metadata, N=None, w=None):
                     adata*w_gpu,
                     coord_gpu[arm_counter,:,:],
                     (nchannel, msize, msize)))
-            # frames.append(nufft[arm_counter].adj_op(adata))
+            
         # frames.append(sp.nufft_adjoint(arm.data[:,pre_discard:] * w, ktraj[arm_counter,:,:], oshape=(nchannel, msize, msize)))
 
         endarm = time.perf_counter()
