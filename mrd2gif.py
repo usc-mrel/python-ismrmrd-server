@@ -109,7 +109,8 @@ def main(args):
                     # Convert to RGB mode to allow colored ROI overlays
                     data = np.array(img).astype(float)
                     data -= minVal
-                    data *= 255/(maxVal - minVal)
+                    if maxVal != minVal:
+                        data *= 255/(maxVal - minVal)
                     data = np.clip(data, 0, 255)
                     tmpImg = Image.fromarray(np.repeat(data[:,:,np.newaxis],3,axis=2).astype(np.uint8), mode='RGB')
 
