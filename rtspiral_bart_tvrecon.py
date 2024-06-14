@@ -287,6 +287,7 @@ def process(connection, config, metadata, N=None, w=None):
         connection.send_image(image)
 
     connection.send_close()
+    os.environ.pop('CUDA_VISIBLE_DEVICES', None)
 
     
 

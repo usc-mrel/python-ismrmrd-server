@@ -189,7 +189,7 @@ def process(connection, config, metadata, N=None, w=None):
         # frames.append(sp.nufft_adjoint(arm.data[:,pre_discard:] * w, ktraj[arm_counter,:,:], oshape=(nchannel, msize, msize)))
 
         endarm = time.perf_counter()
-        print(f"Elapsed time for arm {arm_counter} NUFFT: {(endarm-startarm)*1e3} ms.")
+        # print(f"Elapsed time for arm {arm_counter} NUFFT: {(endarm-startarm)*1e3} ms.")
 
         arm_counter += 1
         if arm_counter == n_unique_angles:
@@ -206,11 +206,8 @@ def process(connection, config, metadata, N=None, w=None):
             # print(f"Elapsed time for frame processing: {end-start} secs.")
             del frames[:window_shift]
             logging.debug("Sending image to client:\n%s", image)
-            start = time.perf_counter()
             connection.send_image(image)
-            end = time.perf_counter()
 
-            # print(f"Elapsed time for frame sending: {end-start} secs.")
             rep_counter += 1
 
         end_iter = time.perf_counter()
