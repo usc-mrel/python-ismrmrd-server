@@ -186,7 +186,7 @@ def process(connection, config, metadata, N=None, w=None):
             connection.send_image(image)
             end = time.perf_counter()
 
-            print(f"Elapsed time for frame sending: {end-start} secs.")
+            # print(f"Elapsed time for frame sending: {end-start} secs.")
             rep_counter += 1
 
         end_iter = time.perf_counter()
