@@ -1,7 +1,13 @@
 #!/bin/bash
 # This script takes a Docker image and creates a chroot image (.img)
 
-# Syntax: ./docker_to_chroot.sh kspacekelvin/fire-python fire-python-chroot.img
+# Syntax: ./docker_to_chroot.sh docker_image_name chroot_file_name
+
+if [[ $# -ne 2 ]]; then
+    echo "Wrong number of arguments" >&2
+    echo "Syntax: ./docker_to_chroot.sh docker_image_name chroot_file_name" >&2
+    exit 2
+fi
 
 DOCKER_NAME=${1}
 CHROOT_FILE=${2}
