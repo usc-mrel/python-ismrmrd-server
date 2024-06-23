@@ -24,19 +24,6 @@ import coils
 # Folder for debug output files
 debugFolder = "/tmp/share/debug"
 
-start = time.perf_counter()
-# We now read these parameters from toml file, so that we won't have to keep restarting the server when we change them.
-with open('configs/rtspiral_vs_config.toml') as jf:
-    cfg = rtoml.load(jf)
-    n_arm_per_frame = cfg['reconstruction']['arms_per_frame']
-    window_shift    = cfg['reconstruction']['window_shift']
-    APPLY_GIRF      = cfg['reconstruction']['apply_girf']
-    gpu_device      = cfg['reconstruction']['gpu_device']
-    coil_combine    = cfg['reconstruction']['coil_combine']
-
-
-end = time.perf_counter()
-print(f"Elapsed time during json config read: {end-start} secs.")
 
 def process(connection, config, metadata, N=None, w=None):
     logging.disable(logging.CRITICAL)
@@ -44,11 +31,20 @@ def process(connection, config, metadata, N=None, w=None):
     logging.info("Config: \n%s", config)
     logging.info("Metadata: \n%s", metadata)
 
+    # We now read these parameters from toml file, so that we won't have to keep restarting the server when we change them.
+    with open('configs/rtspiral_vs_config.toml') as jf:
+        cfg = rtoml.load(jf)
+        n_arm_per_frame = cfg['reconstruction']['arms_per_frame']
+        window_shift    = cfg['reconstruction']['window_shift']
+        APPLY_GIRF      = cfg['reconstruction']['apply_girf']
+        gpu_device      = cfg['reconstruction']['gpu_device']
+        coil_combine    = cfg['reconstruction']['coil_combine']
+
     print(f'Arms per frame: {n_arm_per_frame}, Apply GIRF?: {APPLY_GIRF}')
 
     # Choose your NUFFT backend (installed independly from the package)
-    NufftOperator = mrinufft.get_operator("cufinufft")
-    nufft = []
+    # NufftOperator = mrinufft.get_operator("cufinufft")
+    # nufft = []
     if N is None:
         # start = time.perf_counter()
         # get the k-space trajectory based on the metadata hash.
@@ -103,11 +99,11 @@ def process(connection, config, metadata, N=None, w=None):
         # end = time.perf_counter()
         # logging.debug("Elapsed time during recon prep: %f secs.", end-start)
         # print(f"Elapsed time during recon prep: {end-start} secs.")
-        for ii in range(n_unique_angles):
-            # And create the associated operator.
-            nufft.append(NufftOperator(
-                ktraj[ii,:,:]/msize, shape=[msize, msize], density=np.squeeze(w), n_coils=metadata.acquisitionSystemInformation.receiverChannels, squeeze_dims=True
-            ))
+        # for ii in range(n_unique_angles):
+        #     # And create the associated operator.
+        #     nufft.append(NufftOperator(
+        #         ktraj[ii,:,:]/msize, shape=[msize, msize], density=np.squeeze(w), n_coils=metadata.acquisitionSystemInformation.receiverChannels, squeeze_dims=True
+        #     ))
     else:
         interleaves = N.ishape[0]
 
