@@ -5,7 +5,7 @@ channels:
   - defaults
 dependencies:
   - python=3.10.13
-  # - ismrmrd::ismrmrd-python=1.14.0        # Package not available on Windows -- use pip install instead
+  # - ismrmrd::ismrmrd-python=1.14.1        # Package not available on Windows -- use pip install instead
   # - ismrmrd::siemens_to_ismrmrd=1.2.11    # Package not available on Windows
   - boost=1.76.0         # For ismrmrd
   - libxml2=2.9.12       # For ismrmrd

@@ -53,7 +53,7 @@ RUN apt-get update && apt-get install --no-install-recommends -y libxslt1.1 libh
 RUN mkdir -p /opt/code
 
 # Python MRD library
-RUN pip3 install h5py==3.10.0 ismrmrd==1.14.0
+RUN pip3 install h5py==3.10.0 ismrmrd==1.14.1
 
 RUN cd /opt/code && \
     git clone https://github.com/ismrmrd/ismrmrd-python-tools.git && \
