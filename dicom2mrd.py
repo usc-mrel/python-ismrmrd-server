@@ -195,6 +195,11 @@ def main(args):
             except:
                 pass
 
+            try:
+                tmpMeta['ImageComments'] = tmpDset.ImageComments
+            except:
+                pass
+
             tmpMeta['SequenceDescription'] = tmpDset.SeriesDescription
 
             # Remove pixel data from pydicom class
