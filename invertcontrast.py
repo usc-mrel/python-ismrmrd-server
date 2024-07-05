@@ -368,8 +368,8 @@ def create_example_roi(img_size):
     # Place ROI in bottom right of image, offset and scaled to 10% of the image size
     x = (x-np.min(x)) / (np.max(x) - np.min(x))
     y = (y-np.min(y)) / (np.max(y) - np.min(y))
-    x = (x * 0.08*img_size[0]) + 0.82*img_size[0]
-    y = (y * 0.10*img_size[1]) + 0.80*img_size[1]
+    x = (x * 0.10*np.min(img_size[:2])) + (img_size[1]-0.2*np.min(img_size[:2]))
+    y = (y * 0.10*np.min(img_size[:2])) + (img_size[1]-0.2*np.min(img_size[:2]))
 
     rgb = (1,0,0)  # Red, green, blue color -- normalized to 1
     thickness  = 1 # Line thickness
