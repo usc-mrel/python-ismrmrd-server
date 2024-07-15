@@ -1,31 +1,24 @@
 
 import ismrmrd
-# import os
-# import itertools
 import logging
 import numpy as np
 import numpy.typing as npt
-# import numpy.fft as fft
 import ctypes
 import mrdhelper
-# from datetime import datetime
 import time
 import rtoml
 
 from scipy.io import loadmat
-# from sigpy.linop import NUFFT
 from scipy.ndimage import rotate
 import sigpy as sp
 from sigpy import fourier
-# import cupy as cp
 import GIRF
-import mrinufft
 import coils
 # Folder for debug output files
 debugFolder = "/tmp/share/debug"
 
 
-def process(connection, config, metadata, N=None, w=None):
+def process(connection, config, metadata):
     logging.disable(logging.CRITICAL)
     
     logging.info("Config: \n%s", config)
@@ -42,71 +35,60 @@ def process(connection, config, metadata, N=None, w=None):
         coil_combine    = cfg['reconstruction']['coil_combine']
 
     print(f'Arms per frame: {n_arm_per_frame}, Apply GIRF?: {APPLY_GIRF}')
+    
+    # start = time.perf_counter()
+    # get the k-space trajectory based on the metadata hash.
+    traj_name = metadata.userParameters.userParameterString[1].value
 
-    # Choose your NUFFT backend (installed independly from the package)
-    # NufftOperator = mrinufft.get_operator("cufinufft")
-    # nufft = []
-    if N is None:
-        # start = time.perf_counter()
-        # get the k-space trajectory based on the metadata hash.
-        traj_name = metadata.userParameters.userParameterString[1].value
+    # load the .mat file containing the trajectory
+    traj = loadmat("seq_meta/" + traj_name)
 
-        # load the .mat file containing the trajectory
-        traj = loadmat("seq_meta/" + traj_name)
+    n_unique_angles = traj['param']['repetitions'][0,0][0,0]
 
-        n_unique_angles = traj['param']['repetitions'][0,0][0,0]
-
-        kx = traj['kx'][:,:]
-        ky = traj['ky'][:,:]
+    kx = traj['kx'][:,:]
+    ky = traj['ky'][:,:]
 
 
-        # Prepare gradients and variables if GIRF is requested. 
-        # Unfortunately, we don't know rotations until the first data, so we can't prepare them yet.
-        if APPLY_GIRF:
-            # We get dwell time too late from MRD, as it comes with acquisition.
-            # So we ask it from the metadata.
-            try:
-                dt = traj['param']['dt'][0,0][0,0]
-            except:
-                dt = 1e-6 # [s]
+    # Prepare gradients and variables if GIRF is requested. 
+    # Unfortunately, we don't know rotations until the first data, so we can't prepare them yet.
+    if APPLY_GIRF:
+        # We get dwell time too late from MRD, as it comes with acquisition.
+        # So we ask it from the metadata.
+        try:
+            dt = traj['param']['dt'][0,0][0,0]
+        except:
+            dt = 1e-6 # [s]
 
-            patient_position = metadata.measurementInformation.patientPosition.value
-            r_PCS2DCS = GIRF.calculate_matrix_pcs_to_dcs(patient_position)
+        patient_position = metadata.measurementInformation.patientPosition.value
+        r_PCS2DCS = GIRF.calculate_matrix_pcs_to_dcs(patient_position)
 
-            gx = 1e3*np.concatenate((np.zeros((1, kx.shape[1])), np.diff(kx, axis=0)))/dt/42.58e6
-            gy = 1e3*np.concatenate((np.zeros((1, kx.shape[1])), np.diff(ky, axis=0)))/dt/42.58e6
-            g_nom = np.stack((gx, -gy), axis=2)
+        gx = 1e3*np.concatenate((np.zeros((1, kx.shape[1])), np.diff(kx, axis=0)))/dt/42.58e6
+        gy = 1e3*np.concatenate((np.zeros((1, kx.shape[1])), np.diff(ky, axis=0)))/dt/42.58e6
+        g_nom = np.stack((gx, -gy), axis=2)
 
-            sR = {'T': 0.55}
-            tRR = 3*1e-6/dt
+        sR = {'T': 0.55}
+        tRR = 3*1e-6/dt
 
 
-        ktraj = np.stack((kx, -ky), axis=2)
+    ktraj = np.stack((kx, -ky), axis=2)
 
-        # find max ktraj value
-        kmax = np.max(np.abs(kx + 1j * ky))
+    # find max ktraj value
+    kmax = np.max(np.abs(kx + 1j * ky))
 
-        # swap 0 and 1 axes to make repetitions the first axis (repetitions, interleaves, 2)
-        ktraj = np.swapaxes(ktraj, 0, 1)
+    # swap 0 and 1 axes to make repetitions the first axis (repetitions, interleaves, 2)
+    ktraj = np.swapaxes(ktraj, 0, 1)
 
-        msize = np.int16(10 * traj['param']['fov'][0,0][0,0] / traj['param']['spatial_resolution'][0,0][0,0])
+    msize = np.int16(10 * traj['param']['fov'][0,0][0,0] / traj['param']['spatial_resolution'][0,0][0,0])
 
-        ktraj = 0.5 * (ktraj / kmax) * msize
+    ktraj = 0.5 * (ktraj / kmax) * msize
 
-        nchannel = metadata.acquisitionSystemInformation.receiverChannels
-        pre_discard = traj['param']['pre_discard'][0,0][0,0]
-        w = traj['w']
-        w = np.reshape(w, (1,w.shape[1]))
-        # end = time.perf_counter()
-        # logging.debug("Elapsed time during recon prep: %f secs.", end-start)
-        # print(f"Elapsed time during recon prep: {end-start} secs.")
-        # for ii in range(n_unique_angles):
-        #     # And create the associated operator.
-        #     nufft.append(NufftOperator(
-        #         ktraj[ii,:,:]/msize, shape=[msize, msize], density=np.squeeze(w), n_coils=metadata.acquisitionSystemInformation.receiverChannels, squeeze_dims=True
-        #     ))
-    else:
-        interleaves = N.ishape[0]
+    nchannel = metadata.acquisitionSystemInformation.receiverChannels
+    pre_discard = traj['param']['pre_discard'][0,0][0,0]
+    w = traj['w']
+    w = np.reshape(w, (1,w.shape[1]))
+    # end = time.perf_counter()
+    # logging.debug("Elapsed time during recon prep: %f secs.", end-start)
+    # print(f"Elapsed time during recon prep: {end-start} secs.")
 
     # Discard phase correction lines and accumulate lines until we get fully sampled data
     frames = []
