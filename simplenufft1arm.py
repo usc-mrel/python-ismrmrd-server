@@ -32,6 +32,7 @@ def process(connection, config, metadata, N=None, w=None):
     logging.info("Metadata: \n%s", metadata)
 
     # We now read these parameters from toml file, so that we won't have to keep restarting the server when we change them.
+    print('Loading and applying file configs/rtspiral_vs_config.toml')
     with open('configs/rtspiral_vs_config.toml') as jf:
         cfg = rtoml.load(jf)
         n_arm_per_frame = cfg['reconstruction']['arms_per_frame']
@@ -182,6 +183,7 @@ def process(connection, config, metadata, N=None, w=None):
 
         end_iter = time.perf_counter()
         # print(f"Elapsed time for per iteration: {end_iter-start_iter} secs.")
+    print('Reconstruction is finished.')
 
 
 def process_csm(frames):
