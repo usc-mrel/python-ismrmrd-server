@@ -6,5 +6,5 @@
 "num_iter"          = 90
 "window_shift"      = 17
 "gpu_device"        = 1
-"coil_combine"      = "rssq"
+"coil_combine"      = "adaptive"
 "BART_TOOLBOX_PATH" = "/server/home/btasdelen/bart"

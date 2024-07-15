@@ -147,6 +147,7 @@ def process(connection, config, metadata, N=None, w=None):
     coord_gpu = sp.to_device(ktraj, device=device)
     w_gpu = sp.to_device(w, device=device)
 
+    start_acq = time.time()
     data = []
     coord = []
     dcf = []
@@ -212,6 +213,9 @@ def process(connection, config, metadata, N=None, w=None):
         #     rep_counter += 1
         # end_iter = time.perf_counter()
         # print(f"Elapsed time for per iteration: {end_iter-start_iter} secs.")
+
+    end_acq = time.time()
+    print(f'Acquiring the data took {end_acq-start_acq} secs.')
 
     data = np.array(data)
     data = np.transpose(data, axes=(1, 2, 0))
