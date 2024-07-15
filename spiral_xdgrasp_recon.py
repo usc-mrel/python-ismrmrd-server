@@ -2,20 +2,16 @@
 import ismrmrd
 import os
 import sys
-# import itertools
 import logging
 import numpy as np
 import numpy.typing as npt
-# import numpy.fft as fft
 import ctypes
 
 import rtoml._rtoml
 import mrdhelper
-# from datetime import datetime
 import time
 
 from scipy.io import loadmat
-# from sigpy.linop import NUFFT
 import GIRF
 import rtoml
 import math
@@ -43,6 +39,68 @@ def generate_cardiac_bins(triggers: npt.NDArray[np.double], n_cardiac_bins: int)
             cardiac_bins[arm_slc] = bin_idx
 
     return cardiac_bins
+
+def generate_respiratory_bins(resp_waveform: npt.NDArray[np.double], n_resp_bins: int) -> npt.NDArray[np.int32]:
+    n_acq = resp_waveform.shape[0]
+    I_resp = np.argsort(resp_waveform)
+    I_resp_rev = np.argsort(I_resp)
+
+    n_resp_per_bin = int(n_acq//n_resp_bins)
+    n_ext_resp = n_acq - n_resp_per_bin*n_resp_bins
+
+    curr_bin_start = (n_ext_resp//2)
+    resp_bins = np.zeros((n_acq,), dtype=int)
+    resp_bins[:] = -1
+
+    for bin_i in range(n_resp_bins):
+        curr_bin_slc = np.s_[curr_bin_start:(curr_bin_start + n_resp_per_bin)]
+        resp_bins[curr_bin_slc] = bin_i
+        curr_bin_start += n_resp_per_bin
+
+    resp_bins = resp_bins[I_resp_rev]
+    return resp_bins
+
+def extract_ecg_waveform(wf_list: list, acq_list: list, metadata: ismrmrd.xsd.ismrmrdHeader) -> npt.NDArray[np.int32]:
+    '''From a list of mrd waveform objects, extracts the ECG triggers and puts them in the same raster as the acquisition.'''
+    n_acq = acq_list.__len__()
+    #########################
+    # Read ECG triggers
+    #########################
+    ecg_triggers = []
+    wf_ts = 0
+    for wf in wf_list:
+        if wf.getHead().waveform_id == 0:
+            ecg_triggers.append(wf.data[4,:])
+            if wf_ts == 0:
+                wf_ts = wf.time_stamp
+                ecg_sampling_time = wf_list[0].getHead().sample_time_us*1e-6 # [us] -> [s]
+
+
+    ecg_triggers = np.array(np.concatenate(ecg_triggers, axis=0) > 0, dtype=int)
+    time_ecg = np.arange(ecg_triggers.shape[0])*ecg_sampling_time - (acq_list[0].acquisition_time_stamp - wf_ts)*1e-3
+
+    # Make ECG same raster time with the acquisition. For every value 1, make closest time value 1 in the finer grid.
+    ecg_trig_times = time_ecg[ecg_triggers == 1]
+    acq_sampling_time = metadata.sequenceParameters.TR[0]*1e-3
+    time_acq = np.arange(n_acq)*acq_sampling_time
+
+    ecg_acq_trig_times = []
+    ecg_acq_trig_idxs = []
+    for trg in ecg_trig_times:
+        idx = np.searchsorted(time_acq, trg, side="left")
+        if idx > 0 and (idx == time_acq.shape[0] or math.fabs(trg - time_acq[idx-1]) < math.fabs(trg - time_acq[idx])):
+            ecg_acq_trig_times.append(time_acq[idx-1])
+            ecg_acq_trig_idxs.append(idx-1)
+        else:
+            ecg_acq_trig_times.append(time_acq[idx])
+            ecg_acq_trig_idxs.append(idx)
+
+    ecg_acq_trig_idxs = np.array(ecg_acq_trig_idxs, dtype=int)
+
+    ecg_acq_triggers = np.zeros((n_acq,), dtype=int)
+
+    ecg_acq_triggers[ecg_acq_trig_idxs] = 1
+    return ecg_acq_triggers
 
 def process(connection, config, metadata):
     logging.disable(logging.CRITICAL)
@@ -149,7 +207,6 @@ def process(connection, config, metadata):
                 r_GCS2DCS = r_PCS2DCS.dot(r_GCS2PCS)
                 sR['R'] = r_GCS2DCS.dot(r_GCS2RCS)
                 k_pred, _ = GIRF.apply_GIRF(g_nom, dt, sR, tRR)
-                # k_pred = np.flip(k_pred[:,:,0:2], axis=2) # Drop the z
                 k_pred = k_pred[:,:,0:2] # Drop the z
 
                 kmax = np.max(np.abs(k_pred[:,:,0] + 1j * k_pred[:,:,1]))
@@ -168,43 +225,8 @@ def process(connection, config, metadata):
     end_acq = time.time()
     print(f'Acquiring the data took {end_acq-start_acq} secs.')
     n_acq = acq_list.__len__()
-    n_wf = wf_list.__len__()
-    #########################
-    # Read ECG triggers
-    #########################
-    ecg_triggers = []
-    wf_ts = 0
-    for wf in wf_list:
-        if wf.getHead().waveform_id == 0:
-            ecg_triggers.append(wf.data[4,:])
-            if wf_ts == 0:
-                wf_ts = wf.time_stamp
 
-    ecg_sampling_time = wf_list[0].getHead().sample_time_us*1e-6 # [us] -> [s]
-    ecg_triggers = np.array(np.concatenate(ecg_triggers, axis=0) > 0, dtype=int)
-    time_ecg = np.arange(ecg_triggers.shape[0])*ecg_sampling_time - (acq_list[0].acquisition_time_stamp - wf_ts)*1e-3
-
-    # Make ECG same raster time with the acquisition. For every value 1, make closest time value 1 in the finer grid.
-    ecg_trig_times = time_ecg[ecg_triggers == 1]
-    acq_sampling_time = metadata.sequenceParameters.TR[0]*1e-3
-    time_acq = np.arange(n_acq)*acq_sampling_time
-
-    ecg_acq_trig_times = []
-    ecg_acq_trig_idxs = []
-    for trg in ecg_trig_times:
-        idx = np.searchsorted(time_acq, trg, side="left")
-        if idx > 0 and (idx == time_acq.shape[0] or math.fabs(trg - time_acq[idx-1]) < math.fabs(trg - time_acq[idx])):
-            ecg_acq_trig_times.append(time_acq[idx-1])
-            ecg_acq_trig_idxs.append(idx-1)
-        else:
-            ecg_acq_trig_times.append(time_acq[idx])
-            ecg_acq_trig_idxs.append(idx)
-
-    ecg_acq_trig_idxs = np.array(ecg_acq_trig_idxs, dtype=int)
-
-    ecg_acq_triggers = np.zeros((n_acq,), dtype=int)
-
-    ecg_acq_triggers[ecg_acq_trig_idxs] = 1
+    ecg_acq_triggers = extract_ecg_waveform(wf_list, acq_list, metadata)
 
     data = []
     coord = []
@@ -253,40 +275,25 @@ def process(connection, config, metadata):
     # sens = centeredCrop(sens, [Nx/2, Ny/2, 0]);
     sens = bart.bart(1, f'normalize 8', sens)
 
-    cardiac_bins = generate_cardiac_bins(ecg_acq_triggers, n_cardiac_bins)
 
     resp_waveform = []
+    pt_card_triggers = []
 
     for wf in wf_list:
         if wf.getHead().waveform_id == 1025:
             resp_waveform = wf.data[0,:]
-            resp_sampling_time = wf.getHead().sample_time_us*1e-6
+            pt_card_triggers = wf.data[2,:]
+            # resp_sampling_time = wf.getHead().sample_time_us*1e-6
             break
 
-    # resp_waveform = np.array(resp_waveform)
+    # time_pt = np.arange(resp_waveform.shape[0])*resp_sampling_time
 
-    time_pt = np.arange(resp_waveform.shape[0])*resp_sampling_time
-
-    I_resp = np.argsort(resp_waveform)
-    I_resp_rev = np.argsort(I_resp)
-
-    n_resp_per_bin = int(n_acq//n_resp_bins)
-    n_ext_resp = n_acq - n_resp_per_bin*n_resp_bins
-
-    curr_bin_start = (n_ext_resp//2)
-    resp_bins = np.zeros((n_acq,), dtype=int)
-    resp_bins[:] = -1
-
-    for bin_i in range(n_resp_bins):
-        curr_bin_slc = np.s_[curr_bin_start:(curr_bin_start + n_resp_per_bin)]
-        resp_bins[curr_bin_slc] = bin_i
-        curr_bin_start += n_resp_per_bin
-
-    resp_bins = resp_bins[I_resp_rev]
+    resp_bins = generate_respiratory_bins(resp_waveform, n_resp_bins)
+    cardiac_bins = generate_cardiac_bins(ecg_acq_triggers, n_cardiac_bins)
 
     ksp_grps = []
     trj_grps = []
-    n_min_arms = n_resp_per_bin
+    n_min_arms = n_acq
     n_max_arms = 0
 
     for r_i in range(n_resp_bins):
