@@ -116,6 +116,8 @@ def process(connection, config, metadata):
         lambda_tr = cfg['reconstruction']['reg_lambda_resp']
         lambda_tc = cfg['reconstruction']['reg_lambda_card']
         n_iter = cfg['reconstruction']['num_iter']
+        trigger_source = cfg['reconstruction']['trigger_source']
+        ecg_pt_delay = cfg['reconstruction']['ecg_pilottone_delay']
 
 
     sys.path.append(f'{BART_TOOLBOX_PATH}/python/')
@@ -226,7 +228,31 @@ def process(connection, config, metadata):
     print(f'Acquiring the data took {end_acq-start_acq} secs.')
     n_acq = acq_list.__len__()
 
+    # Extract navigators and generate bins per arm.
+
     ecg_acq_triggers = extract_ecg_waveform(wf_list, acq_list, metadata)
+
+    resp_waveform = []
+    pt_card_triggers = []
+
+    for wf in wf_list:
+        if wf.getHead().waveform_id == 1025:
+            resp_waveform = wf.data[0,:]
+            pt_card_triggers = np.round(((wf.data[2,:] - 2**31)/2**31)).astype(int)
+            pt_sampling_time = wf.getHead().sample_time_us*1e-6
+            break
+
+    # time_pt = np.arange(resp_waveform.shape[0])*resp_sampling_time
+    if trigger_source == 'ecg':
+        cardiac_triggers = ecg_acq_triggers
+    elif trigger_source == 'pilottone':
+        roll_amount = int(ecg_pt_delay//pt_sampling_time)
+        cardiac_triggers = np.roll(pt_card_triggers, -roll_amount)
+        cardiac_triggers[-roll_amount:] = 0
+
+    resp_bins = generate_respiratory_bins(resp_waveform, n_resp_bins)
+    cardiac_bins = generate_cardiac_bins(cardiac_triggers, n_cardiac_bins)
+
 
     data = []
     coord = []
@@ -275,21 +301,6 @@ def process(connection, config, metadata):
     # sens = centeredCrop(sens, [Nx/2, Ny/2, 0]);
     sens = bart.bart(1, f'normalize 8', sens)
 
-
-    resp_waveform = []
-    pt_card_triggers = []
-
-    for wf in wf_list:
-        if wf.getHead().waveform_id == 1025:
-            resp_waveform = wf.data[0,:]
-            pt_card_triggers = wf.data[2,:]
-            # resp_sampling_time = wf.getHead().sample_time_us*1e-6
-            break
-
-    # time_pt = np.arange(resp_waveform.shape[0])*resp_sampling_time
-
-    resp_bins = generate_respiratory_bins(resp_waveform, n_resp_bins)
-    cardiac_bins = generate_cardiac_bins(ecg_acq_triggers, n_cardiac_bins)
 
     ksp_grps = []
     trj_grps = []
