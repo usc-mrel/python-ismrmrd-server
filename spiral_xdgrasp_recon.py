@@ -40,12 +40,13 @@ def generate_cardiac_bins(triggers: npt.NDArray[np.double], n_cardiac_bins: int)
 
     return cardiac_bins
 
-def generate_respiratory_bins(resp_waveform: npt.NDArray[np.double], n_resp_bins: int) -> npt.NDArray[np.int32]:
+def generate_respiratory_bins(resp_waveform: npt.NDArray[np.double], n_resp_bins: int, resp_discard: float = 0) -> npt.NDArray[np.int32]:
     n_acq = resp_waveform.shape[0]
+    n_resp_discard =  int(n_acq*resp_discard)
     I_resp = np.argsort(resp_waveform)
     I_resp_rev = np.argsort(I_resp)
 
-    n_resp_per_bin = int(n_acq//n_resp_bins)
+    n_resp_per_bin = int((n_acq-n_resp_discard)//n_resp_bins)
     n_ext_resp = n_acq - n_resp_per_bin*n_resp_bins
 
     curr_bin_start = (n_ext_resp//2)
@@ -108,16 +109,19 @@ def process(connection, config, metadata):
     # Read config file and import BART
     with open('configs/spiral_xdgrasp_config.toml') as jf:
         cfg = rtoml.load(jf)
-        APPLY_GIRF = cfg['reconstruction']['apply_girf']
-        gpu_device = cfg['reconstruction']['gpu_device']
-        BART_TOOLBOX_PATH = cfg['reconstruction']['BART_TOOLBOX_PATH']
-        n_resp_bins = cfg['reconstruction']['n_respiratory_bins']
-        n_cardiac_bins = cfg['reconstruction']['n_cardiac_bins']
-        lambda_tr = cfg['reconstruction']['reg_lambda_resp']
-        lambda_tc = cfg['reconstruction']['reg_lambda_card']
-        n_iter = cfg['reconstruction']['num_iter']
-        trigger_source = cfg['reconstruction']['trigger_source']
-        ecg_pt_delay = cfg['reconstruction']['ecg_pilottone_delay']
+
+    APPLY_GIRF          = cfg['reconstruction']['apply_girf']
+    gpu_device          = cfg['reconstruction']['gpu_device']
+    BART_TOOLBOX_PATH   = cfg['reconstruction']['BART_TOOLBOX_PATH']
+    lambda_tr           = cfg['reconstruction']['reg_lambda_resp']
+    lambda_tc           = cfg['reconstruction']['reg_lambda_card']
+    n_iter              = cfg['reconstruction']['num_iter']
+    arm_discard         = cfg['reconstruction']['arm_discard']
+    trigger_source  = cfg['binning']['trigger_source']
+    ecg_pt_delay    = cfg['binning']['ecg_pilottone_delay']
+    n_resp_bins     = cfg['binning']['n_respiratory_bins']
+    n_cardiac_bins  = cfg['binning']['n_cardiac_bins']
+    resp_discard    = cfg['binning']['resp_discard']
 
 
     sys.path.append(f'{BART_TOOLBOX_PATH}/python/')
@@ -179,7 +183,6 @@ def process(connection, config, metadata):
 
     ktraj = 0.5 * (ktraj / kmax) * msize
 
-    nchannel = metadata.acquisitionSystemInformation.receiverChannels
     pre_discard = traj['param']['pre_discard'][0,0][0,0]
     w = traj['w']
     w = np.reshape(w, (1,w.shape[1]))
@@ -189,7 +192,7 @@ def process(connection, config, metadata):
 
 
     # Discard phase correction lines and accumulate lines until we get fully sampled data
-
+    print("Receiving the data....")
     start_acq = time.time()
     grp = None
     acq_list = []
@@ -226,7 +229,6 @@ def process(connection, config, metadata):
 
     end_acq = time.time()
     print(f'Acquiring the data took {end_acq-start_acq} secs.')
-    n_acq = acq_list.__len__()
 
     # Extract navigators and generate bins per arm.
 
@@ -250,9 +252,9 @@ def process(connection, config, metadata):
         cardiac_triggers = np.roll(pt_card_triggers, -roll_amount)
         cardiac_triggers[-roll_amount:] = 0
 
-    resp_bins = generate_respiratory_bins(resp_waveform, n_resp_bins)
+    resp_bins = generate_respiratory_bins(resp_waveform, n_resp_bins, resp_discard)
+    np.save('resp_bins', resp_bins)
     cardiac_bins = generate_cardiac_bins(cardiac_triggers, n_cardiac_bins)
-
 
     data = []
     coord = []
@@ -284,11 +286,22 @@ def process(connection, config, metadata):
     nk = data.shape[0]
     nc = data.shape[2]
 
-    ksp_all = np.reshape(data, [1, nk, -1, nc])
+    # Discard requested amount from the start
+    acq_sampling_time = metadata.sequenceParameters.TR[0]*1e-3
+    n_arm_discard = int(arm_discard//acq_sampling_time)
+    
+    data = data[:,n_arm_discard:,:]
+    coord = coord[:,:,n_arm_discard:]
+    resp_bins = resp_bins[n_arm_discard:]
+    cardiac_bins = cardiac_bins[n_arm_discard:]
 
-    traj_all = np.concatenate((coord, np.zeros((1, nk, n_acq))), axis=0)
+    n_acq = data.shape[1]
+
+    print(f"Discarded {n_arm_discard} arms from beginning, {n_acq} arms left.")
 
     # Sensitivity map estimation
+    ksp_all = np.reshape(data, [1, nk, -1, nc])
+    traj_all = np.concatenate((coord, np.zeros((1, nk, n_acq))), axis=0)
 
     _, rtnlinv_sens_32 = bart.bart(2, 'nlinv -a 32 -b 16  -S -d4 -i13 -x 32:32:1 -t',
             traj_all, ksp_all)
