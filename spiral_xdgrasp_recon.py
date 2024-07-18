@@ -61,6 +61,26 @@ def generate_respiratory_bins(resp_waveform: npt.NDArray[np.double], n_resp_bins
     resp_bins = resp_bins[I_resp_rev]
     return resp_bins
 
+def generate_cyclic_respiratory_bins(resp_waveform: npt.NDArray[np.double], n_resp_bins: int, resp_discard: float = 0) -> npt.NDArray[np.int32]:
+    resp_waveform = resp_waveform.astype(float)
+    resp_wf_diff = np.diff(resp_waveform.astype(float), prepend=0)
+
+    I_resp = np.sort(resp_waveform) # To be used for determining intervals
+    n_acq = resp_waveform.shape[0]
+    n_resp_discard =  int(n_acq*resp_discard)
+    max_amp = I_resp[-(n_resp_discard//2+1)]
+    min_amp = I_resp[(n_resp_discard//2)]
+
+    # Normalize the waveform and multiply with half nbins -1 (half because we will distinguish positive and negative slope).
+    resp_bins = (n_resp_bins//2 - 1)*(resp_waveform - min_amp)/(max_amp-min_amp)
+    resp_bins[resp_bins > (n_resp_bins//2-1)] = -1 # Discard bins that are upper extreme
+    resp_bins[resp_bins < 0] = -1 # Discard bins that are lower extreme
+    resp_bins = np.round(resp_bins).astype(int)  # Rounding should give us the bin numbers.
+
+    resp_bins[(resp_wf_diff < 0) & (resp_bins != -1)] = (n_resp_bins-1)-resp_bins[(resp_wf_diff < 0) & (resp_bins != -1)] # Fix the assignment of negative slope bins
+
+    return resp_bins
+
 def extract_ecg_waveform(wf_list: list, acq_list: list, metadata: ismrmrd.xsd.ismrmrdHeader) -> npt.NDArray[np.int32]:
     '''From a list of mrd waveform objects, extracts the ECG triggers and puts them in the same raster as the acquisition.'''
     n_acq = acq_list.__len__()
@@ -116,7 +136,8 @@ def process(connection, config, metadata):
     lambda_tr           = cfg['reconstruction']['reg_lambda_resp']
     lambda_tc           = cfg['reconstruction']['reg_lambda_card']
     n_iter              = cfg['reconstruction']['num_iter']
-    arm_discard         = cfg['reconstruction']['arm_discard']
+    arm_discard_pre     = cfg['reconstruction']['arm_discard_pre']
+    arm_discard_post    = cfg['reconstruction']['arm_discard_post']
     trigger_source  = cfg['binning']['trigger_source']
     ecg_pt_delay    = cfg['binning']['ecg_pilottone_delay']
     n_resp_bins     = cfg['binning']['n_respiratory_bins']
@@ -252,8 +273,7 @@ def process(connection, config, metadata):
         cardiac_triggers = np.roll(pt_card_triggers, -roll_amount)
         cardiac_triggers[-roll_amount:] = 0
 
-    resp_bins = generate_respiratory_bins(resp_waveform, n_resp_bins, resp_discard)
-    np.save('resp_bins', resp_bins)
+    resp_bins = generate_cyclic_respiratory_bins(resp_waveform, n_resp_bins, resp_discard=resp_discard)
     cardiac_bins = generate_cardiac_bins(cardiac_triggers, n_cardiac_bins)
 
     data = []
@@ -288,16 +308,17 @@ def process(connection, config, metadata):
 
     # Discard requested amount from the start
     acq_sampling_time = metadata.sequenceParameters.TR[0]*1e-3
-    n_arm_discard = int(arm_discard//acq_sampling_time)
-    
-    data = data[:,n_arm_discard:,:]
-    coord = coord[:,:,n_arm_discard:]
-    resp_bins = resp_bins[n_arm_discard:]
-    cardiac_bins = cardiac_bins[n_arm_discard:]
+    n_arm_discard_pre = int(arm_discard_pre//acq_sampling_time)
+    n_arm_discard_post= int(arm_discard_post//acq_sampling_time)
+
+    data = data[:,n_arm_discard_pre:-n_arm_discard_post,:]
+    coord = coord[:,:,n_arm_discard_pre:-n_arm_discard_post]
+    resp_bins = resp_bins[n_arm_discard_pre:-n_arm_discard_post]
+    cardiac_bins = cardiac_bins[n_arm_discard_pre:-n_arm_discard_post]
 
     n_acq = data.shape[1]
 
-    print(f"Discarded {n_arm_discard} arms from beginning, {n_acq} arms left.")
+    print(f"Discarded {n_arm_discard_pre} arms from beginning and {n_arm_discard_post} from end, {n_acq} arms left.")
 
     # Sensitivity map estimation
     ksp_all = np.reshape(data, [1, nk, -1, nc])
