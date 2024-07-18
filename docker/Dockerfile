@@ -49,8 +49,11 @@ RUN cd /usr/local/lib && tar -zxvf libismrmrd.tar.gz && rm libismrmrd.tar.gz && 
 COPY --from=mrd_converter /usr/local/bin/siemens_to_ismrmrd  /usr/local/bin/siemens_to_ismrmrd
 
 # Add dependencies for siemens_to_ismrmrd
-RUN apt-get update && apt-get install --no-install-recommends -y libxslt1.1 libhdf5-103 libboost-program-options1.74.0 libpugixml1v5 git dos2unix
+RUN apt-get update && apt-get install --no-install-recommends -y libxslt1.1 libhdf5-103 libboost-program-options1.74.0 libpugixml1v5 git dos2unix nano
 RUN mkdir -p /opt/code
+
+# Tell nano to remember its position from the last time it opened a file
+RUN echo "set positionlog" > ~/.nanorc
 
 # Python MRD library
 RUN pip3 install h5py==3.10.0 ismrmrd==1.14.1

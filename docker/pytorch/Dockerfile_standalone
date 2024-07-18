@@ -47,7 +47,10 @@ RUN cd /usr/local/lib && tar -zxvf libismrmrd.tar.gz && rm libismrmrd.tar.gz && 
 COPY --from=mrd_converter /usr/local/bin/siemens_to_ismrmrd  /usr/local/bin/siemens_to_ismrmrd
 
 # xslt and hdf5 are dependencies for siemens_to_ismrmrd
-RUN apt-get update && apt-get install --no-install-recommends -y libxslt1.1 libhdf5-103 git dos2unix
+RUN apt-get update && apt-get install --no-install-recommends -y libxslt1.1 libhdf5-103 git dos2unix nano
+
+# Tell nano to remember its position from the last time it opened a file
+RUN echo "set positionlog" > ~/.nanorc
 
 # Install PyTorch and its dependencies
 COPY python-ismrmrd-server/docker/pytorch/requirements.txt /
