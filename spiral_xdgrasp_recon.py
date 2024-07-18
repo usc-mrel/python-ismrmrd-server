@@ -143,6 +143,7 @@ def process(connection, config, metadata):
     n_resp_bins     = cfg['binning']['n_respiratory_bins']
     n_cardiac_bins  = cfg['binning']['n_cardiac_bins']
     resp_discard    = cfg['binning']['resp_discard']
+    fill_small_bins = cfg['binning']['fill_small_bins']
 
 
     sys.path.append(f'{BART_TOOLBOX_PATH}/python/')
@@ -284,7 +285,7 @@ def process(connection, config, metadata):
     if (acq_list[0].data.shape[1]-pre_discard/2) == w.shape[1]/2:
         # Check if the OS is removed. Should only happen with offline recon.
         ktraj = ktraj[:,::2,:]
-        w = w[::2]
+        w = w[:,::2]
         pre_discard = int(pre_discard//2)
 
     for arm in acq_list:
@@ -324,15 +325,13 @@ def process(connection, config, metadata):
     ksp_all = np.reshape(data, [1, nk, -1, nc])
     traj_all = np.concatenate((coord, np.zeros((1, nk, n_acq))), axis=0)
 
-    _, rtnlinv_sens_32 = bart.bart(2, 'nlinv -a 32 -b 16  -S -d4 -i13 -x 32:32:1 -t',
+    _, rtnlinv_sens_32 = bart.bart(2, 'nlinv -a 32 -b 16  -S -d4 -i14 -x 32:32:1 -t',
             traj_all, ksp_all)
 
     sens_ksp = np.fft.fftshift(np.fft.ifftn(np.fft.ifftshift(rtnlinv_sens_32, axes=(0,1)), axes=(0, 1)), axes=(0,1))
     sens_ksp = bart.bart(1, f'resize -c 0 {msize*2} 1 {msize*2}', sens_ksp)
-    # sens_ksp = padarray(sens_ksp, [(2*Nx-64)/2 (2*Ny-64)/2]);
     sens = np.fft.fftshift(np.fft.fftn(np.fft.fftshift(sens_ksp, axes=(0,1)), axes=(0, 1)), axes=(0,1))
     sens = bart.bart(1, f'resize -c 0 {msize} 1 {msize}', sens)
-    # sens = centeredCrop(sens, [Nx/2, Ny/2, 0]);
     sens = bart.bart(1, f'normalize 8', sens)
 
 
@@ -352,13 +351,29 @@ def process(connection, config, metadata):
             ksp_grps[r_i].append(data[:,grp_idxs,:])
             trj_grps[r_i].append(np.concatenate((coord[:,:,grp_idxs], np.zeros((1, nk, np.sum(grp_idxs)))), axis=0))
 
-    print(f'There are {n_min_arms} arms per bin.')
-    # Second pass for discarding the excess arms.
-    for r_i in range(n_resp_bins):
-        for c_i in range(n_cardiac_bins):
-            ksp_grps[r_i][c_i] = ksp_grps[r_i][c_i][:,0:n_min_arms,:]
-            trj_grps[r_i][c_i] = trj_grps[r_i][c_i][:,:,0:n_min_arms]
 
+    
+    if fill_small_bins is True:
+        print(f'There are at least {n_min_arms} arms and at most {n_max_arms} per bin.')
+        ksp_grps2 = np.zeros((n_resp_bins, n_cardiac_bins, nk, n_max_arms, nc), dtype=data.dtype)
+        trj_grps2 = np.zeros((n_resp_bins, n_cardiac_bins, 3, nk, n_max_arms), dtype=coord.dtype)
+        # Second pass for zero filling the missing arms.
+        for r_i in range(n_resp_bins):
+            for c_i in range(n_cardiac_bins):
+                n_carms = ksp_grps[r_i][c_i].shape[1]
+                ksp_grps2[r_i, c_i, :, :n_carms, :] = ksp_grps[r_i][c_i]
+                trj_grps2[r_i, c_i, :, :, :n_carms] = trj_grps[r_i][c_i]
+
+        ksp_grps = ksp_grps2
+        trj_grps = trj_grps2
+    else:
+        print(f'There are {n_min_arms} arms per bin.')
+        # Second pass for discarding the excess arms.
+        for r_i in range(n_resp_bins):
+            for c_i in range(n_cardiac_bins):
+                ksp_grps[r_i][c_i] = ksp_grps[r_i][c_i][:,0:n_min_arms,:]
+                trj_grps[r_i][c_i] = trj_grps[r_i][c_i][:,:,0:n_min_arms]
+                
     #       0           1           2           3           4           5
     #   READ_DIM,   PHS1_DIM,   PHS2_DIM,   COIL_DIM,   MAPS_DIM,   TE_DIM,
     #       6           7           8           9          10          11 
