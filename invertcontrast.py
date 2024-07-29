@@ -108,7 +108,8 @@ def process(connection, config, metadata):
         if len(waveformGroup) > 0:
             waveformGroup.sort(key = lambda item: item.time_stamp)
             ecgData = [item.data for item in waveformGroup if item.waveform_id == 0]
-            ecgData = np.concatenate(ecgData,1)
+            if len(ecgData) > 0:
+                ecgData = np.concatenate(ecgData,1)
 
         # Process any remaining groups of raw or image data.  This can 
         # happen if the trigger condition for these groups are not met.
