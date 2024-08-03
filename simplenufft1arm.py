@@ -105,66 +105,67 @@ def process(connection, config, metadata):
         if arm is None:
             break
         start_iter = time.perf_counter()
+        
+        if type(arm) is ismrmrd.Acquisition:
+            # First arm came, if GIRF is requested, correct trajectories and reupload.
+            if (arm.idx.kspace_encode_step_1 == 0) and APPLY_GIRF:
+                r_GCS2RCS = np.array(  [[0,    1,   0],  # [PE]   [0 1 0] * [r]
+                                        [1,    0,   0],  # [RO] = [1 0 0] * [c]
+                                        [0,    0,   1]]) # [SL]   [0 0 1] * [s]
+                r_GCS2PCS = np.array([arm.phase_dir, -np.array(arm.read_dir), arm.slice_dir])
+                r_GCS2DCS = r_PCS2DCS.dot(r_GCS2PCS)
+                sR['R'] = r_GCS2DCS.dot(r_GCS2RCS)
+                k_pred, _ = GIRF.apply_GIRF(g_nom, dt, sR, tRR)
+                # k_pred = np.flip(k_pred[:,:,0:2], axis=2) # Drop the z
+                k_pred = k_pred[:,:,0:2] # Drop the z
 
-        # First arm came, if GIRF is requested, correct trajectories and reupload.
-        if (arm.idx.kspace_encode_step_1 == 0) and APPLY_GIRF:
-            r_GCS2RCS = np.array(  [[0,    1,   0],  # [PE]   [0 1 0] * [r]
-                                    [1,    0,   0],  # [RO] = [1 0 0] * [c]
-                                    [0,    0,   1]]) # [SL]   [0 0 1] * [s]
-            r_GCS2PCS = np.array([arm.phase_dir, -np.array(arm.read_dir), arm.slice_dir])
-            r_GCS2DCS = r_PCS2DCS.dot(r_GCS2PCS)
-            sR['R'] = r_GCS2DCS.dot(r_GCS2RCS)
-            k_pred, _ = GIRF.apply_GIRF(g_nom, dt, sR, tRR)
-            # k_pred = np.flip(k_pred[:,:,0:2], axis=2) # Drop the z
-            k_pred = k_pred[:,:,0:2] # Drop the z
+                kmax = np.max(np.abs(k_pred[:,:,0] + 1j * k_pred[:,:,1]))
+                k_pred = np.swapaxes(k_pred, 0, 1)
+                k_pred = 0.5 * (k_pred / kmax) * msize
+                coord_gpu = sp.to_device(k_pred, device=device) # Replace  the original k-space
 
-            kmax = np.max(np.abs(k_pred[:,:,0] + 1j * k_pred[:,:,1]))
-            k_pred = np.swapaxes(k_pred, 0, 1)
-            k_pred = 0.5 * (k_pred / kmax) * msize
-            coord_gpu = sp.to_device(k_pred, device=device) # Replace  the original k-space
+            if (arm.idx.kspace_encode_step_1 == 0) and (arm.data.shape[1]-pre_discard/2) == coord_gpu.shape[1]/2:
+                # Check if the OS is removed. Should only happen with offline recon.
+                coord_gpu = coord_gpu[:,::2,:]
+                w_gpu = w_gpu[:,::2]
+                pre_discard = int(pre_discard//2)
+                
 
-        if (arm.idx.kspace_encode_step_1 == 0) and (arm.data.shape[1]-pre_discard/2) == coord_gpu.shape[1]/2:
-            # Check if the OS is removed. Should only happen with offline recon.
-            coord_gpu = coord_gpu[:,::2,:]
-            w_gpu = w_gpu[:,::2]
-            pre_discard = int(pre_discard//2)
-            
+            startarm = time.perf_counter()
+            adata = sp.to_device(arm.data[:,pre_discard:], device=device)
 
-        startarm = time.perf_counter()
-        adata = sp.to_device(arm.data[:,pre_discard:], device=device)
+            with device:
+                frames.append(fourier.nufft_adjoint(
+                        adata*w_gpu,
+                        coord_gpu[arm_counter,:,:],
+                        (nchannel, msize, msize)))
+                
+            # frames.append(sp.nufft_adjoint(arm.data[:,pre_discard:] * w, ktraj[arm_counter,:,:], oshape=(nchannel, msize, msize)))
 
-        with device:
-            frames.append(fourier.nufft_adjoint(
-                    adata*w_gpu,
-                    coord_gpu[arm_counter,:,:],
-                    (nchannel, msize, msize)))
-            
-        # frames.append(sp.nufft_adjoint(arm.data[:,pre_discard:] * w, ktraj[arm_counter,:,:], oshape=(nchannel, msize, msize)))
+            endarm = time.perf_counter()
+            # print(f"Elapsed time for arm {arm_counter} NUFFT: {(endarm-startarm)*1e3} ms.")
 
-        endarm = time.perf_counter()
-        # print(f"Elapsed time for arm {arm_counter} NUFFT: {(endarm-startarm)*1e3} ms.")
+            arm_counter += 1
+            if arm_counter == n_unique_angles:
+                arm_counter = 0
 
-        arm_counter += 1
-        if arm_counter == n_unique_angles:
-            arm_counter = 0
+            if ((arm.idx.kspace_encode_step_1+1) % window_shift) == 0 and ((arm.idx.kspace_encode_step_1+1) >= n_arm_per_frame):
+                start = time.perf_counter()
+                if coil_combine == "adaptive" and rep_counter == 0:
+                    sens = sp.to_device(process_csm(frames), device=device)
 
-        if ((arm.idx.kspace_encode_step_1+1) % window_shift) == 0 and ((arm.idx.kspace_encode_step_1+1) >= n_arm_per_frame):
-            start = time.perf_counter()
-            if coil_combine == "adaptive" and rep_counter == 0:
-                sens = sp.to_device(process_csm(frames), device=device)
+                image = process_group(arm, frames, sens, device, rep_counter, config, metadata)
+                end = time.perf_counter()
 
-            image = process_group(arm, frames, sens, device, rep_counter, config, metadata)
-            end = time.perf_counter()
+                # print(f"Elapsed time for frame processing: {end-start} secs.")
+                del frames[:window_shift]
+                logging.debug("Sending image to client:\n%s", image)
+                connection.send_image(image)
 
-            # print(f"Elapsed time for frame processing: {end-start} secs.")
-            del frames[:window_shift]
-            logging.debug("Sending image to client:\n%s", image)
-            connection.send_image(image)
+                rep_counter += 1
 
-            rep_counter += 1
-
-        end_iter = time.perf_counter()
-        # print(f"Elapsed time for per iteration: {end_iter-start_iter} secs.")
+            end_iter = time.perf_counter()
+            # print(f"Elapsed time for per iteration: {end_iter-start_iter} secs.")
     print('Reconstruction is finished.')
 
 
@@ -214,6 +215,7 @@ def process_group(group, frames: list, sens: npt.ArrayLike, device, rep, config,
     image = ismrmrd.Image.from_array(data.transpose(), acquisition=group, transpose=False)
 
     image.image_index = rep
+    image.repetition = rep
 
     # Set field of view
     image.field_of_view = (ctypes.c_float(metadata.encoding[0].reconSpace.fieldOfView_mm.x), 
