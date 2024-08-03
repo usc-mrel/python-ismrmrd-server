@@ -24,27 +24,6 @@ from sigpy import mri
 import GIRF
 import rtoml
 
-# Read config file and import BART
-with open('configs/rtspiral_bart_tvrecon_config.toml') as jf:
-    cfg = rtoml.load(jf)
-    n_arm_per_frame = cfg['reconstruction']['arms_per_frame']
-    APPLY_GIRF = cfg['reconstruction']['apply_girf']
-    gpu_device = cfg['reconstruction']['gpu_device']
-    BART_TOOLBOX_PATH = cfg['reconstruction']['BART_TOOLBOX_PATH']
-    n_recon_frames = cfg['reconstruction']['num_recon_frames']
-    reg_lambda = cfg['reconstruction']['reg_lambda']
-    max_iter = cfg['reconstruction']['num_iter']
-
-
-sys.path.append(f'{BART_TOOLBOX_PATH}/python/')
-import bart # type: ignore
-
-# Set BART related env vars
-os.environ['BART_TOOLBOX_PATH'] = BART_TOOLBOX_PATH
-os.environ['OPENBLAS_NUM_THREADS'] = '32'
-os.environ['OMP_NUM_THREADS'] = '32'
-os.environ['CUDA_VISIBLE_DEVICES'] = str(gpu_device)
-
 # Folder for debug output files
 debugFolder = "/tmp/share/debug"
 
@@ -75,68 +54,87 @@ def conditionalGroups(iterable, predicateAccept, predicateFinish):
         iterable.send_close()
 
 
-def process(connection, config, metadata, N=None, w=None):
+def process(connection, config, metadata):
     logging.disable(logging.CRITICAL)
     
     logging.info("Config: \n%s", config)
     logging.info("Metadata: \n%s", metadata)
 
-    if N is None:
-        # start = time.perf_counter()
-        # get the k-space trajectory based on the metadata hash.
-        traj_name = metadata.userParameters.userParameterString[1].value
-
-        # load the .mat file containing the trajectory
-        traj = loadmat("seq_meta/" + traj_name)
-
-        n_unique_angles = traj['param']['repetitions'][0,0][0,0]
-
-        kx = traj['kx'][:,:]
-        ky = traj['ky'][:,:]
+    # Read config file and import BART
+    with open('configs/rtspiral_bart_tvrecon_config.toml') as jf:
+        cfg = rtoml.load(jf)
+        n_arm_per_frame = cfg['reconstruction']['arms_per_frame']
+        APPLY_GIRF = cfg['reconstruction']['apply_girf']
+        gpu_device = cfg['reconstruction']['gpu_device']
+        BART_TOOLBOX_PATH = cfg['reconstruction']['BART_TOOLBOX_PATH']
+        n_recon_frames = cfg['reconstruction']['num_recon_frames']
+        reg_lambda = cfg['reconstruction']['reg_lambda']
+        max_iter = cfg['reconstruction']['num_iter']
 
 
-        # Prepare gradients and variables if GIRF is requested. 
-        # Unfortunately, we don't know rotations until the first data, so we can't prepare them yet.
-        if APPLY_GIRF:
-            # We get dwell time too late from MRD, as it comes with acquisition.
-            # So we ask it from the metadata.
-            try:
-                dt = traj['param']['dt'][0,0][0,0]
-            except:
-                dt = 1e-6 # [s]
+    sys.path.append(f'{BART_TOOLBOX_PATH}/python/')
+    import bart # type: ignore
 
-            patient_position = metadata.measurementInformation.patientPosition.value
-            r_PCS2DCS = GIRF.calculate_matrix_pcs_to_dcs(patient_position)
+    # Set BART related env vars
+    os.environ['BART_TOOLBOX_PATH'] = BART_TOOLBOX_PATH
+    os.environ['OPENBLAS_NUM_THREADS'] = '32'
+    os.environ['OMP_NUM_THREADS'] = '32'
+    os.environ['CUDA_VISIBLE_DEVICES'] = str(gpu_device)
 
-            gx = 1e3*np.concatenate((np.zeros((1, kx.shape[1])), np.diff(kx, axis=0)))/dt/42.58e6
-            gy = 1e3*np.concatenate((np.zeros((1, kx.shape[1])), np.diff(ky, axis=0)))/dt/42.58e6
-            g_nom = np.stack((gx, -gy), axis=2)
+    # start = time.perf_counter()
+    # get the k-space trajectory based on the metadata hash.
+    traj_name = metadata.userParameters.userParameterString[1].value
 
-            sR = {'T': 0.55}
-            tRR = 3*1e-6/dt
+    # load the .mat file containing the trajectory
+    traj = loadmat("seq_meta/" + traj_name)
+
+    n_unique_angles = traj['param']['repetitions'][0,0][0,0]
+
+    kx = traj['kx'][:,:]
+    ky = traj['ky'][:,:]
 
 
-        ktraj = np.stack((kx, -ky), axis=2)
+    # Prepare gradients and variables if GIRF is requested. 
+    # Unfortunately, we don't know rotations until the first data, so we can't prepare them yet.
+    if APPLY_GIRF:
+        # We get dwell time too late from MRD, as it comes with acquisition.
+        # So we ask it from the metadata.
+        try:
+            dt = traj['param']['dt'][0,0][0,0]
+        except:
+            dt = 1e-6 # [s]
 
-        # find max ktraj value
-        kmax = np.max(np.abs(kx + 1j * ky))
+        patient_position = metadata.measurementInformation.patientPosition.value
+        r_PCS2DCS = GIRF.calculate_matrix_pcs_to_dcs(patient_position)
 
-        # swap 0 and 1 axes to make repetitions the first axis (repetitions, interleaves, 2)
-        ktraj = np.swapaxes(ktraj, 0, 1)
+        gx = 1e3*np.concatenate((np.zeros((1, kx.shape[1])), np.diff(kx, axis=0)))/dt/42.58e6
+        gy = 1e3*np.concatenate((np.zeros((1, kx.shape[1])), np.diff(ky, axis=0)))/dt/42.58e6
+        g_nom = np.stack((gx, -gy), axis=2)
 
-        msize = np.int16(10 * traj['param']['fov'][0,0][0,0] / traj['param']['spatial_resolution'][0,0][0,0])
+        sR = {'T': 0.55}
+        tRR = 3*1e-6/dt
 
-        ktraj = 0.5 * (ktraj / kmax) * msize
 
-        nchannel = metadata.acquisitionSystemInformation.receiverChannels
-        pre_discard = traj['param']['pre_discard'][0,0][0,0]
-        w = traj['w']
-        w = np.reshape(w, (1,w.shape[1]))
-        # end = time.perf_counter()
-        # logging.debug("Elapsed time during recon prep: %f secs.", end-start)
-        # print(f"Elapsed time during recon prep: {end-start} secs.")
-    else:
-        interleaves = N.ishape[0]
+    ktraj = np.stack((kx, -ky), axis=2)
+
+    # find max ktraj value
+    kmax = np.max(np.abs(kx + 1j * ky))
+
+    # swap 0 and 1 axes to make repetitions the first axis (repetitions, interleaves, 2)
+    ktraj = np.swapaxes(ktraj, 0, 1)
+
+    msize = np.int16(10 * traj['param']['fov'][0,0][0,0] / traj['param']['spatial_resolution'][0,0][0,0])
+
+    ktraj = 0.5 * (ktraj / kmax) * msize
+
+    nchannel = metadata.acquisitionSystemInformation.receiverChannels
+    pre_discard = traj['param']['pre_discard'][0,0][0,0]
+    w = traj['w']
+    w = np.reshape(w, (1,w.shape[1]))
+    # end = time.perf_counter()
+    # logging.debug("Elapsed time during recon prep: %f secs.", end-start)
+    # print(f"Elapsed time during recon prep: {end-start} secs.")
+
 
     # Discard phase correction lines and accumulate lines until we get fully sampled data
     frames = []
@@ -157,62 +155,72 @@ def process(connection, config, metadata, N=None, w=None):
         # start_iter = time.perf_counter()
         if arm is None:
             break
-        # First arm came, if GIRF is requested, correct trajectories and reupload.
-        if (arm.idx.kspace_encode_step_1 == 0) and APPLY_GIRF:
-            r_GCS2RCS = np.array(  [[0,    1,   0],  # [PE]   [0 1 0] * [r]
-                                    [1,    0,   0],  # [RO] = [1 0 0] * [c]
-                                    [0,    0,   1]]) # [SL]   [0 0 1] * [s]
-            r_GCS2PCS = np.array([arm.phase_dir, -np.array(arm.read_dir), arm.slice_dir])
-            r_GCS2DCS = r_PCS2DCS.dot(r_GCS2PCS)
-            sR['R'] = r_GCS2DCS.dot(r_GCS2RCS)
-            k_pred, _ = GIRF.apply_GIRF(g_nom, dt, sR, tRR)
-            # k_pred = np.flip(k_pred[:,:,0:2], axis=2) # Drop the z
-            k_pred = k_pred[:,:,0:2] # Drop the z
 
-            kmax = np.max(np.abs(k_pred[:,:,0] + 1j * k_pred[:,:,1]))
-            k_pred = np.swapaxes(k_pred, 0, 1)
-            k_pred = 0.5 * (k_pred / kmax) * msize
-            coord_gpu = sp.to_device(k_pred, device=device) # Replace  the original k-space
-            ktraj = k_pred
-            
-        if (arm.idx.kspace_encode_step_1 == 0):
-            grp = arm
+        if type(arm) is ismrmrd.Acquisition:
 
-        # startarm = time.perf_counter()
-        # adata = sp.to_device(arm.data[:,pre_discard:], device=device)
-        data.append(arm.data[:,pre_discard:])
-        coord.append(ktraj[arm_counter,:,:])
-        dcf.append(w[0,:])
-        # with device:
-        #     frames.append(fourier.nufft_adjoint(
-        #             adata*w_gpu,
-        #             coord_gpu[arm_counter,:,:],
-        #             (nchannel, msize, msize)))
+            # First arm came, if GIRF is requested, correct trajectories and reupload.
+            if (arm.idx.kspace_encode_step_1 == 0) and APPLY_GIRF:
+                r_GCS2RCS = np.array(  [[0,    1,   0],  # [PE]   [0 1 0] * [r]
+                                        [1,    0,   0],  # [RO] = [1 0 0] * [c]
+                                        [0,    0,   1]]) # [SL]   [0 0 1] * [s]
+                r_GCS2PCS = np.array([arm.phase_dir, -np.array(arm.read_dir), arm.slice_dir])
+                r_GCS2DCS = r_PCS2DCS.dot(r_GCS2PCS)
+                sR['R'] = r_GCS2DCS.dot(r_GCS2RCS)
+                k_pred, _ = GIRF.apply_GIRF(g_nom, dt, sR, tRR)
+                # k_pred = np.flip(k_pred[:,:,0:2], axis=2) # Drop the z
+                k_pred = k_pred[:,:,0:2] # Drop the z
 
-        # endarm = time.perf_counter()
-        # print(f"Elapsed time for arm {arm_counter} NUFFT: {(endarm-startarm)*1e3} ms.")
+                kmax = np.max(np.abs(k_pred[:,:,0] + 1j * k_pred[:,:,1]))
+                k_pred = np.swapaxes(k_pred, 0, 1)
+                k_pred = 0.5 * (k_pred / kmax) * msize
+                coord_gpu = sp.to_device(k_pred, device=device) # Replace  the original k-space
+                ktraj = k_pred
+                
+                if (arm.data.shape[1]-pre_discard/2) == w.shape[1]/2:
+                    # Check if the OS is removed. Should only happen with offline recon.
+                    ktraj = ktraj[:,::2,:]
+                    w = w[:,::2]
+                    pre_discard = int(pre_discard//2)
+                
+            if (arm.idx.kspace_encode_step_1 == 0):
+                grp = arm
 
-        arm_counter += 1
-        if arm_counter == n_unique_angles:
-            arm_counter = 0
+            # startarm = time.perf_counter()
+            # adata = sp.to_device(arm.data[:,pre_discard:], device=device)
+            data.append(arm.data[:,pre_discard:])
+            coord.append(ktraj[arm_counter,:,:])
+            dcf.append(w[0,:])
 
-        # if ((arm.idx.kspace_encode_step_1+1) % n_arm_per_frame) == 0:
-        #     start = time.perf_counter()
+            # with device:
+            #     frames.append(fourier.nufft_adjoint(
+            #             adata*w_gpu,
+            #             coord_gpu[arm_counter,:,:],
+            #             (nchannel, msize, msize)))
 
-        #     image = process_group(arm, frames, device, rep_counter, config, metadata)
-        #     end = time.perf_counter()
+            # endarm = time.perf_counter()
+            # print(f"Elapsed time for arm {arm_counter} NUFFT: {(endarm-startarm)*1e3} ms.")
 
-        #     # print(f"Elapsed time for frame processing: {end-start} secs.")
-        #     frames = []
-        #     logging.debug("Sending image to client:\n%s", image)
-        #     start = time.perf_counter()
-        #     # connection.send_image(image)
-        #     end = time.perf_counter()
+            arm_counter += 1
+            if arm_counter == n_unique_angles:
+                arm_counter = 0
 
-        #     print(f"Elapsed time for frame sending: {end-start} secs.")
-        #     rep_counter += 1
-        # end_iter = time.perf_counter()
-        # print(f"Elapsed time for per iteration: {end_iter-start_iter} secs.")
+            # if ((arm.idx.kspace_encode_step_1+1) % n_arm_per_frame) == 0:
+            #     start = time.perf_counter()
+
+            #     image = process_group(arm, frames, device, rep_counter, config, metadata)
+            #     end = time.perf_counter()
+
+            #     # print(f"Elapsed time for frame processing: {end-start} secs.")
+            #     frames = []
+            #     logging.debug("Sending image to client:\n%s", image)
+            #     start = time.perf_counter()
+            #     # connection.send_image(image)
+            #     end = time.perf_counter()
+
+            #     print(f"Elapsed time for frame sending: {end-start} secs.")
+            #     rep_counter += 1
+            # end_iter = time.perf_counter()
+            # print(f"Elapsed time for per iteration: {end_iter-start_iter} secs.")
 
     end_acq = time.time()
     print(f'Acquiring the data took {end_acq-start_acq} secs.')
