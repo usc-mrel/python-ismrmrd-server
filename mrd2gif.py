@@ -8,6 +8,11 @@ import numpy as np
 import mrdhelper
 from PIL import Image, ImageDraw
 
+defaults = {
+    'in_group': '',
+    'rescale':   1
+}
+
 def main(args):
     dset = h5py.File(args.filename, 'r')
     if not dset:
@@ -114,6 +119,11 @@ def main(args):
                     data = np.clip(data, 0, 255)
                     tmpImg = Image.fromarray(np.repeat(data[:,:,np.newaxis],3,axis=2).astype(np.uint8), mode='RGB')
 
+                    if args.rescale != 1:
+                        tmpImg = tmpImg.resize(tuple(args.rescale*x for x in tmpImg.size))
+                        for i in range(len(roi)):
+                            roi[i] = tuple(([args.rescale*x for x in roi[i][0]], [args.rescale*y for y in roi[i][1]], roi[i][2], roi[i][3]))
+
                     draw = ImageDraw.Draw(tmpImg)
                     for (x, y, rgb, thickness) in roi:
                         draw.line(list(zip(x, y)), fill=(int(rgb[0]*255), int(rgb[1]*255), int(rgb[2]*255), 0), width=int(thickness))
@@ -152,8 +162,11 @@ def main(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Convert MRD image file to animated GIF',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument('filename',          help='Input file')
-    parser.add_argument('-g', '--in-group',  help='Input data group')
+    parser.add_argument('filename',                   help='Input file')
+    parser.add_argument('-g', '--in-group',           help='Input data group')
+    parser.add_argument('-r', '--rescale',  type=int, help='Rescale factor (integer) for output images')
+
+    parser.set_defaults(**defaults)
 
     args = parser.parse_args()
 
