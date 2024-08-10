@@ -154,7 +154,7 @@ def process(connection, config, metadata):
                 if coil_combine == "adaptive" and rep_counter == 0:
                     sens = sp.to_device(process_csm(frames), device=device)
 
-                image = process_group(arm, frames, sens, device, rep_counter, config, metadata)
+                image = process_group(arm, frames, sens, device, rep_counter, cfg, metadata)
                 end = time.perf_counter()
 
                 # print(f"Elapsed time for frame processing: {end-start} secs.")
@@ -224,9 +224,11 @@ def process_group(group, frames: list, sens: npt.ArrayLike, device, rep, config,
 
     # Set ISMRMRD Meta Attributes
     meta = ismrmrd.Meta({'DataRole':               'Image',
-                         'ImageProcessingHistory': ['FIRE', 'PYTHON'],
+                         'ImageProcessingHistory': ['FIRE', 'PYTHON', 'simplenufft1arm'],
                          'WindowCenter':           str((maxVal+1)/2),
-                         'WindowWidth':            str((maxVal+1))})
+                         'WindowWidth':            str((maxVal+1)),
+                         'NumArmsPerFrame':        str(config['reconstruction']['arms_per_frame']),
+                         'GriddingWindowShift':    str(config['reconstruction']['window_shift'])})
 
     # Add image orientation directions to MetaAttributes if not already present
     if meta.get('ImageRowDir') is None:
