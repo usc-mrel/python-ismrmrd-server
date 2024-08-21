@@ -2,60 +2,25 @@
 import ismrmrd
 import os
 import sys
-# import itertools
 import logging
 import numpy as np
-# import numpy.fft as fft
 import ctypes
 
-import rtoml._rtoml
 import mrdhelper
-# from datetime import datetime
 import time
-import json
 
 from scipy.io import loadmat
-# from sigpy.linop import NUFFT
 from scipy.ndimage import rotate
-import sigpy as sp
-from sigpy import fourier
-from sigpy import mri
-# import cupy as cp
+
 import GIRF
 import rtoml
 
 # Folder for debug output files
 debugFolder = "/tmp/share/debug"
 
-def groups(iterable, predicate):
-    group = []
-    for item in iterable:
-        group.append(item)
-
-        if predicate(item):
-            yield group
-            group = []
-
-
-def conditionalGroups(iterable, predicateAccept, predicateFinish):
-    group = []
-    try:
-        for item in iterable:
-            if item is None:
-                break
-
-            if predicateAccept(item):
-                group.append(item)
-
-            if predicateFinish(item):
-                yield group
-                group = []
-    finally:
-        iterable.send_close()
-
 
 def process(connection, config, metadata):
-    logging.disable(logging.CRITICAL)
+    logging.disable(logging.WARNING)
     
     logging.info("Config: \n%s", config)
     logging.info("Metadata: \n%s", metadata)
@@ -63,14 +28,18 @@ def process(connection, config, metadata):
     # Read config file and import BART
     with open('configs/rtspiral_bart_tvrecon_config.toml') as jf:
         cfg = rtoml.load(jf)
-        n_arm_per_frame = cfg['reconstruction']['arms_per_frame']
-        APPLY_GIRF = cfg['reconstruction']['apply_girf']
-        gpu_device = cfg['reconstruction']['gpu_device']
-        BART_TOOLBOX_PATH = cfg['reconstruction']['BART_TOOLBOX_PATH']
-        n_recon_frames = cfg['reconstruction']['num_recon_frames']
-        reg_lambda = cfg['reconstruction']['reg_lambda']
-        max_iter = cfg['reconstruction']['num_iter']
 
+    APPLY_GIRF = cfg['reconstruction']['apply_girf']
+    gpu_device = cfg['reconstruction']['gpu_device']
+    BART_TOOLBOX_PATH   = cfg['reconstruction']['BART_TOOLBOX_PATH']
+    n_arm_per_frame     = cfg['reconstruction']['arms_per_frame']
+    n_recon_frames      = cfg['reconstruction']['num_recon_frames']
+    n_chunks            = cfg['reconstruction']['num_chunks']
+    reg_lambda          = cfg['reconstruction']['reg_lambda']
+    max_iter            = cfg['reconstruction']['num_iter']
+
+    if n_recon_frames % n_chunks != 0:
+        logging.error('Number of frames is not divisible by number of chunks. Check and correct the config.')
 
     sys.path.append(f'{BART_TOOLBOX_PATH}/python/')
     import bart # type: ignore
@@ -137,20 +106,14 @@ def process(connection, config, metadata):
 
 
     # Discard phase correction lines and accumulate lines until we get fully sampled data
-    frames = []
     arm_counter = 0
-    rep_counter = 0
-    device = sp.Device(0)
-
-    coord_gpu = sp.to_device(ktraj, device=device)
-    w_gpu = sp.to_device(w, device=device)
 
     start_acq = time.time()
     data = []
     coord = []
     dcf = []
     grp = None
-    # for group in conditionalGroups(connection, lambda acq: not acq.is_flag_set(ismrmrd.ACQ_IS_PHASECORR_DATA), lambda acq: ((acq.idx.kspace_encode_step_1+1) % interleaves == 0)):
+
     for arm in connection:
         # start_iter = time.perf_counter()
         if arm is None:
@@ -173,7 +136,6 @@ def process(connection, config, metadata):
                 kmax = np.max(np.abs(k_pred[:,:,0] + 1j * k_pred[:,:,1]))
                 k_pred = np.swapaxes(k_pred, 0, 1)
                 k_pred = 0.5 * (k_pred / kmax) * msize
-                coord_gpu = sp.to_device(k_pred, device=device) # Replace  the original k-space
                 ktraj = k_pred
                 
                 if (arm.data.shape[1]-pre_discard/2) == w.shape[1]/2:
@@ -185,60 +147,27 @@ def process(connection, config, metadata):
             if (arm.idx.kspace_encode_step_1 == 0):
                 grp = arm
 
-            # startarm = time.perf_counter()
-            # adata = sp.to_device(arm.data[:,pre_discard:], device=device)
+
             data.append(arm.data[:,pre_discard:])
             coord.append(ktraj[arm_counter,:,:])
             dcf.append(w[0,:])
-
-            # with device:
-            #     frames.append(fourier.nufft_adjoint(
-            #             adata*w_gpu,
-            #             coord_gpu[arm_counter,:,:],
-            #             (nchannel, msize, msize)))
-
-            # endarm = time.perf_counter()
-            # print(f"Elapsed time for arm {arm_counter} NUFFT: {(endarm-startarm)*1e3} ms.")
 
             arm_counter += 1
             if arm_counter == n_unique_angles:
                 arm_counter = 0
 
-            # if ((arm.idx.kspace_encode_step_1+1) % n_arm_per_frame) == 0:
-            #     start = time.perf_counter()
 
-            #     image = process_group(arm, frames, device, rep_counter, config, metadata)
-            #     end = time.perf_counter()
-
-            #     # print(f"Elapsed time for frame processing: {end-start} secs.")
-            #     frames = []
-            #     logging.debug("Sending image to client:\n%s", image)
-            #     start = time.perf_counter()
-            #     # connection.send_image(image)
-            #     end = time.perf_counter()
-
-            #     print(f"Elapsed time for frame sending: {end-start} secs.")
-            #     rep_counter += 1
-            # end_iter = time.perf_counter()
-            # print(f"Elapsed time for per iteration: {end_iter-start_iter} secs.")
 
     end_acq = time.time()
     print(f'Acquiring the data took {end_acq-start_acq} secs.')
 
     data = np.array(data)
     data = np.transpose(data, axes=(1, 2, 0))
-    ksp_gpu = sp.to_device(data, device=device)
     coord = np.array(coord, dtype=np.float32)
     coord = np.transpose(coord, axes=(1, 0, 2))
-    coord_gpu = sp.to_device(coord, device=device)
-    dcf_gpu = sp.to_device(np.array(dcf, dtype=np.float32).T, device=device)
-    # with device:
-    #     sens_map = mri.app.JsenseRecon(ksp_gpu,
-    #                             coord=coord_gpu, weights=dcf_gpu,device=device, img_shape=(msize, msize)).run()
 
-    nc = ksp_gpu.shape[0]
-    nk = ksp_gpu.shape[1]
-
+    nc = data.shape[0]
+    nk = data.shape[1]
 
     kdata = np.transpose(data[:,:,:n_recon_frames*n_arm_per_frame], (2, 0, 1))
     kdata = kdata.reshape(n_recon_frames, n_arm_per_frame, nc, nk)            # [n_recon_frames, n_arms, n_ch, n_samples]
@@ -253,11 +182,8 @@ def process(connection, config, metadata):
     traj_all = np.reshape(kloc, (3, nk, -1))
     kloc = kloc[:,:,:,None,None,None,None,None,None,None,:]
 
-    # sens_map = sens_map.transpose((1, 2, 0))
-    # sens_map = sens_map[:,:,None,:]
     print('kdata array shape: {}'.format(kdata.shape))
     print('kloc array shape: {}'.format(kloc.shape))
-    # print('sens_map array shape: {}'.format(sens_map.shape))
 
 
     #       0           1           2           3           4           5
@@ -266,13 +192,6 @@ def process(connection, config, metadata):
     #   COEFF_DIM,  COEFF2_DIM, ITER_DIM,   CSHIFT_DIM, TIME_DIM,   TIME2_DIM
     #      12          13          14      
     #   LEVEL_DIM,  SLICE_DIM,  AVG_DIM
-
-    ################################################################################
-    # Gridding Example for one frame
-    #
-
-    # zero_filed_img = sp.nufft_adjoint(kdata[0, :, :, :] * kweight, kloc[0, :, :, :], (nc, rNy, rNx))
-    # pl.ImagePlot(xp.squeeze(zero_filed_img), z=0, title='Multi-channel Gridding')
 
 
     ################################################################################
@@ -291,17 +210,68 @@ def process(connection, config, metadata):
     sens_map = bart.bart(1, f'normalize 8', sens)
     # sens = sens/vecnorm(sens,2,4)
 
+    # Estimate data scaling outside of the bart for:
+    # 1) We can exclude first 5 frames, they seem to dominate the scaling due to steady-state artifacts.
+    # 2) We can use smaller amount of data to estimate scale of all the data. Scaling won't change in time dimension (hopefully).
+    n_frame_per_chunk = n_recon_frames//n_chunks
 
-    img = bart.bart(1, f'pics -g -m -e -S -R T:1024:1024:{reg_lambda*n_recon_frames} -d 4 -i {max_iter} -t', kloc, kdata, sens_map)
-    img = np.squeeze(img)
-    for ii in range(n_recon_frames):
-        image = process_group(grp, img[None,:,:,ii], ii, [], metadata)
-        connection.send_image(image)
+    inv_scl = estimate_scale_bart(bart, kloc[:,:,:,:,:,:,:,:,:,:,5:n_frame_per_chunk], kdata[:,:,:,:,:,:,:,:,:,:,5:n_frame_per_chunk], sens_map)
+    
+    # Divide data into chunks to fit intof a single GPU. Things to care: 
+    # 1. First and last frames has artifacts (due to diff operation), so there should be a single frame overlap.
+    # 2. Single scale should be used.
+    # 3. Track the actual frame number.
+
+    frame_idx = 0
+    for chunk_i in range(n_chunks):
+        
+        if n_chunks == 1: # No chunking, so no overlap.
+            slc = np.arange(chunk_i*n_frame_per_chunk, (chunk_i+1)*n_frame_per_chunk)
+        elif chunk_i == 0: # First chunk, only overlap at the end.
+            slc = np.arange(n_frame_per_chunk+1)
+        elif chunk_i == (n_chunks-1): # Last chunk, only overlap at the beginning.
+            slc = np.arange(chunk_i*n_frame_per_chunk-1, (chunk_i+1)*n_frame_per_chunk)
+        else: # Mid chunks
+            slc = np.arange(chunk_i*n_frame_per_chunk-1, (chunk_i+1)*n_frame_per_chunk+1)
+            
+        img = bart.bart(1, f'pics -g -m -w {inv_scl} -e -S -R T:1024:1024:{reg_lambda*n_frame_per_chunk} -d 4 -i {max_iter} -t', 
+                        kloc[:,:,:,:,:,:,:,:,:,:,slc], 
+                        kdata[:,:,:,:,:,:,:,:,:,:,slc], 
+                        sens_map)
+
+        img = np.squeeze(img)
+
+        if n_chunks > 1: 
+            if chunk_i == 0: # First chunk, only overlap at the end.
+                img = img[:,:,:-1]
+            elif chunk_i == (n_chunks-1): # Last chunk, only overlap at the beginning.
+                img = img[:,:,1:]
+            else: # Mid chunks
+                img = img[:,:,1:-1]
+
+        # Reshape, process and send images.
+        for ii in range(img.shape[2]):
+            image = process_group(grp, img[None,:,:,ii], frame_idx, [], metadata)
+            connection.send_image(image)
+            frame_idx += 1
+
 
     connection.send_close()
     os.environ.pop('CUDA_VISIBLE_DEVICES', None)
+    print('Reconstruction is finished.')
 
-    
+def estimate_scale_bart(bart, traj, ksp, sens_map) -> float:
+    ''' Estimates inverse scaling of the data as BART does. 
+    '''
+    first_it = bart.bart(1, f'nufft -g -a ', traj, ksp)
+    first_it = np.sum(first_it*np.conj(sens_map[:,:,:,:,None,None,None,None,None,None,None]), axis=3)
+    med_ = np.median(np.abs(first_it[:]))
+    p90_ = np.percentile(np.abs(first_it[:]), 90)
+    max_ = np.max(np.abs(first_it[:]))
+
+    scl = p90_ if ((max_-p90_) < 2*(p90_-med_)) else max_
+    print(f"Scaling: {scl} (max = {max_}/p90 = {p90_}/median = {med_})\n")
+    return scl
 
 
 def process_group(group, data, rep, config, metadata):
@@ -329,6 +299,7 @@ def process_group(group, data, rep, config, metadata):
     image = ismrmrd.Image.from_array(data, acquisition=group, transpose=False)
 
     image.image_index = rep
+    image.repetition = rep
 
     # Set field of view
     image.field_of_view = (ctypes.c_float(metadata.encoding[0].reconSpace.fieldOfView_mm.x), 
@@ -354,63 +325,4 @@ def process_group(group, data, rep, config, metadata):
 
     image.attribute_string = xml
     return image
-
-def process_group_bkp(group, frames, device, rep, config, metadata):
-    xp = device.xp
-    with device:
-        data = xp.zeros(frames[0].shape, dtype=np.complex128)
-        for g in frames:
-            data += g
-        # Sum of squares coil combination
-        data = np.abs(np.flip(data, axis=(1,)))
-        data = np.square(data)
-        data = np.sum(data, axis=0)
-        data = np.sqrt(data)
-
-        # Determine max value (12 or 16 bit)
-        BitsStored = 12
-        if (mrdhelper.get_userParameterLong_value(metadata, "BitsStored") is not None):
-            BitsStored = mrdhelper.get_userParameterLong_value(metadata, "BitsStored")
-        maxVal = 2**BitsStored - 1
-
-        # Normalize and convert to int16
-        data *= maxVal/data.max()
-        data = np.around(data)
-        data = data.astype(np.int16)
-
-    data = sp.to_device(data)
-
-    # Format as ISMRMRD image data
-    # data has shape [RO PE], i.e. [x y].
-    # from_array() should be called with 'transpose=False' to avoid warnings, and when called
-    # with this option, can take input as: [cha z y x], [z y x], or [y x]
-    image = ismrmrd.Image.from_array(data.transpose(), acquisition=group, transpose=False)
-
-    image.image_index = rep
-
-    # Set field of view
-    image.field_of_view = (ctypes.c_float(metadata.encoding[0].reconSpace.fieldOfView_mm.x), 
-                            ctypes.c_float(metadata.encoding[0].reconSpace.fieldOfView_mm.y), 
-                            ctypes.c_float(metadata.encoding[0].reconSpace.fieldOfView_mm.z))
-
-    # Set ISMRMRD Meta Attributes
-    meta = ismrmrd.Meta({'DataRole':               'Image',
-                         'ImageProcessingHistory': ['FIRE', 'PYTHON'],
-                         'WindowCenter':           str((maxVal+1)/2),
-                         'WindowWidth':            str((maxVal+1))})
-
-    # Add image orientation directions to MetaAttributes if not already present
-    if meta.get('ImageRowDir') is None:
-        meta['ImageRowDir'] = ["{:.18f}".format(image.getHead().read_dir[0]), "{:.18f}".format(image.getHead().read_dir[1]), "{:.18f}".format(image.getHead().read_dir[2])]
-
-    if meta.get('ImageColumnDir') is None:
-        meta['ImageColumnDir'] = ["{:.18f}".format(image.getHead().phase_dir[0]), "{:.18f}".format(image.getHead().phase_dir[1]), "{:.18f}".format(image.getHead().phase_dir[2])]
-
-    xml = meta.serialize()
-    logging.debug("Image MetaAttributes: %s", xml)
-    logging.debug("Image data has %d elements", image.data.size)
-
-    image.attribute_string = xml
-    return image
-
 
