@@ -16,6 +16,7 @@ import GIRF
 import rtoml
 import math
 import constants
+from connection import Connection
 
 # Folder for debug output files
 debugFolder = "/tmp/share/debug"
@@ -123,7 +124,7 @@ def extract_ecg_waveform(wf_list: list, acq_list: list, metadata: ismrmrd.xsd.is
     ecg_acq_triggers[ecg_acq_trig_idxs] = 1
     return ecg_acq_triggers
 
-def process(connection, config, metadata):
+def process(connection: Connection, config, metadata):
     logging.disable(logging.CRITICAL)
 
     # Read config file and import BART
@@ -262,7 +263,7 @@ def process(connection, config, metadata):
     for wf in wf_list:
         if wf.getHead().waveform_id == 1025:
             resp_waveform = wf.data[0,:]
-            pt_card_triggers = np.round(((wf.data[2,:] - 2**31)/2**31)).astype(int)
+            pt_card_triggers = ((wf.data[2,:]-2**31) != 0).astype(int)#np.round(((wf.data[2,:] - 2**31)/2**31)).astype(int)
             pt_sampling_time = wf.getHead().sample_time_us*1e-6
             break
 
@@ -332,7 +333,7 @@ def process(connection, config, metadata):
     sens_ksp = bart.bart(1, f'resize -c 0 {msize*2} 1 {msize*2}', sens_ksp)
     sens = np.fft.fftshift(np.fft.fftn(np.fft.fftshift(sens_ksp, axes=(0,1)), axes=(0, 1)), axes=(0,1))
     sens = bart.bart(1, f'resize -c 0 {msize} 1 {msize}', sens)
-    sens = bart.bart(1, f'normalize 8', sens)
+    sens = bart.bart(1, 'normalize 8', sens)
 
 
     ksp_grps = []
@@ -406,6 +407,10 @@ def process(connection, config, metadata):
         for ci in range(n_cardiac_bins):
             image = process_group(grp, img[None,:,:,ri,ci], ri, ci, [], metadata)
             connection.send_image(image)
+
+    # Send waveforms back to save them with images
+    for wf in wf_list:
+        connection.send_waveform(wf)
 
     connection.send_close()
     os.environ.pop('CUDA_VISIBLE_DEVICES', None)

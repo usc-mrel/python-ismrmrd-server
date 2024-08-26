@@ -113,6 +113,7 @@ def process(connection, config, metadata):
     coord = []
     dcf = []
     grp = None
+    wf_list = []
 
     for arm in connection:
         # start_iter = time.perf_counter()
@@ -156,6 +157,8 @@ def process(connection, config, metadata):
             if arm_counter == n_unique_angles:
                 arm_counter = 0
 
+        elif type(arm) is ismrmrd.Waveform:
+            wf_list.append(arm)
 
 
     end_acq = time.time()
@@ -197,7 +200,7 @@ def process(connection, config, metadata):
     ################################################################################
     # CS Reconstruction
     #
-
+    # TODO: nothing limits the time frame we add here.
     _, rtnlinv_sens_32 = bart.bart(2, 'nlinv -a 32 -b 16  -S -d4 -i13 -x 32:32:1 -t',
             traj_all, ksp_all)
 
@@ -233,7 +236,7 @@ def process(connection, config, metadata):
             slc = np.arange(chunk_i*n_frame_per_chunk-1, (chunk_i+1)*n_frame_per_chunk)
         else: # Mid chunks
             slc = np.arange(chunk_i*n_frame_per_chunk-1, (chunk_i+1)*n_frame_per_chunk+1)
-            
+
         img = bart.bart(1, f'pics -g -m -w {inv_scl} -e -S -R T:1024:1024:{reg_lambda*n_frame_per_chunk} -d 4 -i {max_iter} -t', 
                         kloc[:,:,:,:,:,:,:,:,:,:,slc], 
                         kdata[:,:,:,:,:,:,:,:,:,:,slc], 
@@ -256,6 +259,10 @@ def process(connection, config, metadata):
             frame_idx += 1
 
 
+    # Send waveforms back to save them with images
+    for wf in wf_list:
+        connection.send_waveform(wf)
+
     connection.send_close()
     os.environ.pop('CUDA_VISIBLE_DEVICES', None)
     print('Reconstruction is finished.')
@@ -263,7 +270,7 @@ def process(connection, config, metadata):
 def estimate_scale_bart(bart, traj, ksp, sens_map) -> float:
     ''' Estimates inverse scaling of the data as BART does. 
     '''
-    first_it = bart.bart(1, f'nufft -g -a ', traj, ksp)
+    first_it = bart.bart(1, 'nufft -g -a ', traj, ksp)
     first_it = np.sum(first_it*np.conj(sens_map[:,:,:,:,None,None,None,None,None,None,None]), axis=3)
     med_ = np.median(np.abs(first_it[:]))
     p90_ = np.percentile(np.abs(first_it[:]), 90)
@@ -273,6 +280,35 @@ def estimate_scale_bart(bart, traj, ksp, sens_map) -> float:
     print(f"Scaling: {scl} (max = {max_}/p90 = {p90_}/median = {med_})\n")
     return scl
 
+def power_iteration_sigpy(sens_map, traj):
+    dims = sens_map.shape
+    import sigpy as sp
+    from sigpy import linop, alg
+
+    device = sp.Device(0)
+    sens_map_gpu = sp.to_device(sens_map[:,:,:,None], device=device)
+    traj_sp = sp.to_device(np.tile(traj.squeeze()[:,:,:,:,None], (1,1,1,1,dims[2])).transpose(1,2,4,3,0), device=device)
+    n_frame = traj_sp.shape[3]
+    S = linop.Multiply((dims[0], dims[1], 1, n_frame), sens_map_gpu)
+
+    NUFFTop = linop.NUFFTAdjoint((dims[0], dims[1], dims[2], n_frame), traj_sp*2).H
+    NUFFTop.toeplitz = True
+
+    pm = alg.PowerMethod(S.H(NUFFTop.N(S)), sp.to_device(np.random.rand(dims[0], dims[1], 1, n_frame) + 1j*np.random.rand(dims[0], dims[1], 1, n_frame), device=device), max_iter=30)
+    print('PM obj created.')
+
+    while not pm.done():
+        print(f'{pm.iter} - {pm.max_eig/n_frame}')
+        pm.update()
+
+    max_eig = pm.max_eig/n_frame
+    del traj_sp
+    del sens_map_gpu
+    del NUFFTop
+    del S
+    del pm
+
+    return max_eig
 
 def process_group(group, data, rep, config, metadata):
    

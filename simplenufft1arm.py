@@ -100,6 +100,7 @@ def process(connection, config, metadata):
     w_gpu = sp.to_device(w, device=device)
 
     sens = []
+    wf_list = []
 
     for arm in connection:
         if arm is None:
@@ -166,6 +167,14 @@ def process(connection, config, metadata):
 
             end_iter = time.perf_counter()
             # print(f"Elapsed time for per iteration: {end_iter-start_iter} secs.")
+        elif type(arm) is ismrmrd.Waveform:
+            wf_list.append(arm)
+
+    # Send waveforms back to save them with images
+    for wf in wf_list:
+        connection.send_waveform(wf)
+
+    connection.send_close()
     print('Reconstruction is finished.')
 
 
