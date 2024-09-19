@@ -9,6 +9,7 @@ import ismrmrd.xsd
 import importlib
 import os
 import json
+import signal
 
 import simplefft
 import invertcontrast
@@ -42,6 +43,9 @@ class Server:
         self.socket.listen(0)
 
         while True:
+            signal.siginterrupt(signal.SIGTERM, True)
+            signal.siginterrupt(signal.SIGINT, True)
+            
             sock, (remote_addr, remote_port) = self.socket.accept()
 
             logging.info("Accepting connection from: %s:%d", remote_addr, remote_port)
