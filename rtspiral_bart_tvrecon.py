@@ -10,7 +10,6 @@ import mrdhelper
 import time
 
 from scipy.io import loadmat
-from scipy.ndimage import rotate
 
 import GIRF
 import rtoml
@@ -96,7 +95,7 @@ def process(connection, config, metadata):
 
     ktraj = 0.5 * (ktraj / kmax) * msize
 
-    nchannel = metadata.acquisitionSystemInformation.receiverChannels
+    # nchannel = metadata.acquisitionSystemInformation.receiverChannels
     pre_discard = traj['param']['pre_discard'][0,0][0,0]
     w = traj['w']
     w = np.reshape(w, (1,w.shape[1]))
@@ -210,7 +209,7 @@ def process(connection, config, metadata):
     sens = np.fft.fftshift(np.fft.fftn(np.fft.fftshift(sens_ksp, axes=(0,1)), axes=(0, 1)), axes=(0,1))
     sens = bart.bart(1, f'resize -c 0 {msize} 1 {msize}', sens)
     # sens = centeredCrop(sens, [Nx/2, Ny/2, 0]);
-    sens_map = bart.bart(1, f'normalize 8', sens)
+    sens_map = bart.bart(1, 'normalize 8', sens)
     # sens = sens/vecnorm(sens,2,4)
 
     # Estimate data scaling outside of the bart for:
@@ -224,18 +223,18 @@ def process(connection, config, metadata):
     # 1. First and last frames has artifacts (due to diff operation), so there should be a single frame overlap.
     # 2. Single scale should be used.
     # 3. Track the actual frame number.
-
+    start_time_stamp = grp.getHead().acquisition_time_stamp
     frame_idx = 0
     for chunk_i in range(n_chunks):
         
         if n_chunks == 1: # No chunking, so no overlap.
             slc = np.arange(chunk_i*n_frame_per_chunk, (chunk_i+1)*n_frame_per_chunk)
         elif chunk_i == 0: # First chunk, only overlap at the end.
-            slc = np.arange(n_frame_per_chunk+1)
+            slc = np.arange(n_frame_per_chunk+3)
         elif chunk_i == (n_chunks-1): # Last chunk, only overlap at the beginning.
-            slc = np.arange(chunk_i*n_frame_per_chunk-1, (chunk_i+1)*n_frame_per_chunk)
+            slc = np.arange(chunk_i*n_frame_per_chunk-3, (chunk_i+1)*n_frame_per_chunk)
         else: # Mid chunks
-            slc = np.arange(chunk_i*n_frame_per_chunk-1, (chunk_i+1)*n_frame_per_chunk+1)
+            slc = np.arange(chunk_i*n_frame_per_chunk-3, (chunk_i+1)*n_frame_per_chunk+3)
 
         img = bart.bart(1, f'pics -g -m -w {inv_scl} -e -S -R T:1024:1024:{reg_lambda*n_frame_per_chunk} -d 4 -i {max_iter} -t', 
                         kloc[:,:,:,:,:,:,:,:,:,:,slc], 
@@ -246,14 +245,16 @@ def process(connection, config, metadata):
 
         if n_chunks > 1: 
             if chunk_i == 0: # First chunk, only overlap at the end.
-                img = img[:,:,:-1]
+                img = img[:,:,:-3]
             elif chunk_i == (n_chunks-1): # Last chunk, only overlap at the beginning.
-                img = img[:,:,1:]
+                img = img[:,:,3:]
             else: # Mid chunks
-                img = img[:,:,1:-1]
+                img = img[:,:,3:-3]
 
         # Reshape, process and send images.
         for ii in range(img.shape[2]):
+            # update time stamp
+            grp.acquisition_time_stamp = start_time_stamp + int(frame_idx*(n_arm_per_frame*metadata.sequenceParameters.TR[0]/2.5))
             image = process_group(grp, img[None,:,:,ii], frame_idx, [], metadata)
             connection.send_image(image)
             frame_idx += 1
