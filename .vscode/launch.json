@@ -43,8 +43,8 @@
             "request": "launch",
             "program": "dicom2mrd.py",
             "console": "integratedTerminal",
-            "args": ["D:\MIDEA\OpenRecon\openrecondeepdixonac\input_dcms\DICOMsorted\RETRO^RECON-RR_20240919-22-44-44-00001\20240905-0001\SE00001001 FL3D_VIBE_AC_FAST_COR_RR_OPP", 
-                    "-o", "D:\MIDEA\OpenRecon\openrecondeepdixonac\input_dcms\DICOMsorted\RETRO^RECON-RR_20240919-22-44-44-00001\20240905-0001\FL3D_VIBE_AC_FAST_COR_RR_OPP.h5"],
+            "args": ["D:\\MIDEA\\OpenRecon\\openrecondeepdixonac\\input_dcms\\DICOMsorted\\RETRO^RECON-RR_20240919-22-44-44-00001\\20240905-0001\\SE00001001 FL3D_VIBE_AC_FAST_COR_RR_OPP", 
+                    "-o", "D:\\MIDEA\\OpenRecon\\openrecondeepdixonac\\input_dcms\\DICOMsorted\\RETRO^RECON-RR_20240919-22-44-44-00001\\20240905-0001\\FL3D_VIBE_AC_FAST_COR_RR_OPP.h5"],
         },
 
     ],
