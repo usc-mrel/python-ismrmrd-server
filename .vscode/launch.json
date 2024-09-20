@@ -36,7 +36,7 @@
             "justMyCode": true,
         },
 
-        // Run dicom2md.py // -o 'C:\\Users\\z003fysn\\OneDrive \- Siemens Healthineers\\_SiemensProjects\\AI_attenCorrection_mMR\\RawData\\Michelson\\Mumaps TRA COR\\ismrmdh5\\dicom_img.h5' 
+        // Run dicom2md.py
         {
             "name": "Run dicom2md with argument",
             "type": "debugpy",
