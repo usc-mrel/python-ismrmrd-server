@@ -43,9 +43,13 @@ class Server:
         self.socket.listen(0)
 
         while True:
-            signal.siginterrupt(signal.SIGTERM, True)
-            signal.siginterrupt(signal.SIGINT, True)
-            
+            try:
+                signal.siginterrupt(signal.SIGTERM, True)
+                signal.siginterrupt(signal.SIGINT, True)
+            except AttributeError:
+                # signal.siginterrupt is not available in Windows
+                pass
+
             sock, (remote_addr, remote_port) = self.socket.accept()
 
             logging.info("Accepting connection from: %s:%d", remote_addr, remote_port)
