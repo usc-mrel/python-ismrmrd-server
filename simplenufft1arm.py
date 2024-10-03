@@ -9,7 +9,6 @@ import time
 import rtoml
 
 from scipy.io import loadmat
-from scipy.ndimage import rotate
 import sigpy as sp
 from sigpy import fourier
 import GIRF
@@ -19,13 +18,14 @@ debugFolder = "/tmp/share/debug"
 
 
 def process(connection, config, metadata):
-    logging.disable(logging.CRITICAL)
+    logging.disable(logging.DEBUG)
     
     logging.info("Config: \n%s", config)
     logging.info("Metadata: \n%s", metadata)
 
     # We now read these parameters from toml file, so that we won't have to keep restarting the server when we change them.
-    print('Loading and applying file configs/rtspiral_vs_config.toml')
+    logging.info('''================================================================
+                 Loading and applying file configs/rtspiral_vs_config.toml''')
     with open('configs/rtspiral_vs_config.toml') as jf:
         cfg = rtoml.load(jf)
         n_arm_per_frame = cfg['reconstruction']['arms_per_frame']
@@ -33,8 +33,14 @@ def process(connection, config, metadata):
         APPLY_GIRF      = cfg['reconstruction']['apply_girf']
         gpu_device      = cfg['reconstruction']['gpu_device']
         coil_combine    = cfg['reconstruction']['coil_combine']
+        save_complex    = cfg['reconstruction']['save_complex']
 
-    print(f'Arms per frame: {n_arm_per_frame}, Apply GIRF?: {APPLY_GIRF}')
+    logging.info(f'''Arms per frame: {n_arm_per_frame}
+                 Apply GIRF?: {APPLY_GIRF}
+                 GPU Device: {gpu_device}
+                 Coil Combine: {coil_combine}
+                 Save Complex: {save_complex}\n
+                 =================================================================''')
     
     # start = time.perf_counter()
     # get the k-space trajectory based on the metadata hash.
@@ -56,7 +62,7 @@ def process(connection, config, metadata):
         # So we ask it from the metadata.
         try:
             dt = traj['param']['dt'][0,0][0,0]
-        except:
+        except KeyError:
             dt = 1e-6 # [s]
 
         patient_position = metadata.measurementInformation.patientPosition.value
@@ -141,10 +147,8 @@ def process(connection, config, metadata):
                         coord_gpu[arm_counter,:,:],
                         (nchannel, msize, msize)))
                 
-            # frames.append(sp.nufft_adjoint(arm.data[:,pre_discard:] * w, ktraj[arm_counter,:,:], oshape=(nchannel, msize, msize)))
-
             endarm = time.perf_counter()
-            # print(f"Elapsed time for arm {arm_counter} NUFFT: {(endarm-startarm)*1e3} ms.")
+            logging.debug("Elapsed time for arm %d NUFFT: %f ms.", arm_counter, (endarm-startarm)*1e3)
 
             arm_counter += 1
             if arm_counter == n_unique_angles:
@@ -155,10 +159,13 @@ def process(connection, config, metadata):
                 if coil_combine == "adaptive" and rep_counter == 0:
                     sens = sp.to_device(process_csm(frames), device=device)
 
-                image = process_group(arm, frames, sens, device, rep_counter, cfg, metadata)
+                if save_complex:
+                    image = process_frame_complex(arm, frames, sens, device, rep_counter, cfg, metadata)
+                else:
+                    image = process_group(arm, frames, sens, device, rep_counter, cfg, metadata)
                 end = time.perf_counter()
 
-                # print(f"Elapsed time for frame processing: {end-start} secs.")
+                logging.debug("Elapsed time for frame processing: %f secs.", end-start)
                 del frames[:window_shift]
                 logging.debug("Sending image to client:\n%s", image)
                 connection.send_image(image)
@@ -166,7 +173,7 @@ def process(connection, config, metadata):
                 rep_counter += 1
 
             end_iter = time.perf_counter()
-            # print(f"Elapsed time for per iteration: {end_iter-start_iter} secs.")
+            logging.debug("Elapsed time for per iteration: %f secs.", end_iter-start_iter)
         elif type(arm) is ismrmrd.Waveform:
             wf_list.append(arm)
 
@@ -211,7 +218,8 @@ def process_group(group, frames: list, sens: npt.ArrayLike, device, rep, config,
         maxVal = 2**BitsStored - 1
 
         # Normalize and convert to int16
-        data *= maxVal/data.max()
+        dscale = maxVal/data.max()
+        data *= dscale
         data = np.around(data)
         data = data.astype(np.int16)
 
@@ -236,6 +244,64 @@ def process_group(group, frames: list, sens: npt.ArrayLike, device, rep, config,
                          'ImageProcessingHistory': ['FIRE', 'PYTHON', 'simplenufft1arm'],
                          'WindowCenter':           str((maxVal+1)/2),
                          'WindowWidth':            str((maxVal+1)),
+                         'NumArmsPerFrame':        str(config['reconstruction']['arms_per_frame']),
+                         'GriddingWindowShift':    str(config['reconstruction']['window_shift'])}, 
+                         'ImageScaleFactor',       str(dscale))
+
+    # Add image orientation directions to MetaAttributes if not already present
+    if meta.get('ImageRowDir') is None:
+        meta['ImageRowDir'] = ["{:.18f}".format(image.getHead().read_dir[0]), "{:.18f}".format(image.getHead().read_dir[1]), "{:.18f}".format(image.getHead().read_dir[2])]
+
+    if meta.get('ImageColumnDir') is None:
+        meta['ImageColumnDir'] = ["{:.18f}".format(image.getHead().phase_dir[0]), "{:.18f}".format(image.getHead().phase_dir[1]), "{:.18f}".format(image.getHead().phase_dir[2])]
+
+    xml = meta.serialize()
+    logging.debug("Image MetaAttributes: %s", xml)
+    logging.debug("Image data has %d elements", image.data.size)
+
+    image.attribute_string = xml
+    return image
+
+
+def process_frame_complex(group, frames: list, sens: npt.ArrayLike, device, rep, config, metadata):
+    xp = device.xp
+    with device:
+        data = xp.zeros(frames[0].shape, dtype=np.complex128)
+        for g in frames:
+            data += g
+
+        if sens.__len__() == 0:
+            logging.error("No coil sensitivity maps found. Cannot perform coil combination.")
+            # Sum of squares coil combination
+            data = np.abs(np.flip(data, axis=(1,)))
+            data = np.square(data)
+            data = np.sum(data, axis=0)
+            data = np.sqrt(data)
+        else:
+            # Coil combine
+            data = np.flip(np.sum(np.conj(sens) * data, axis=0), axis=(0,))
+
+    data = sp.to_device(data)
+
+    # Format as ISMRMRD image data
+    # data has shape [RO PE], i.e. [x y].
+    # from_array() should be called with 'transpose=False' to avoid warnings, and when called
+    # with this option, can take input as: [cha z y x], [z y x], or [y x]
+    image = ismrmrd.Image.from_array(data.transpose(), acquisition=group, transpose=False)
+
+    image.image_index = rep
+    image.repetition = rep
+
+    # Set field of view
+    image.field_of_view = (ctypes.c_float(metadata.encoding[0].reconSpace.fieldOfView_mm.x), 
+                            ctypes.c_float(metadata.encoding[0].reconSpace.fieldOfView_mm.y), 
+                            ctypes.c_float(metadata.encoding[0].reconSpace.fieldOfView_mm.z))
+
+    # Set ISMRMRD Meta Attributes
+    meta = ismrmrd.Meta({'DataRole':               'Image',
+                         'ImageProcessingHistory': ['FIRE', 'PYTHON', 'simplenufft1arm'],
+                         'WindowCenter':           str((data.max()+1)/2),
+                         'WindowWidth':            str((data.max()+1)),
                          'NumArmsPerFrame':        str(config['reconstruction']['arms_per_frame']),
                          'GriddingWindowShift':    str(config['reconstruction']['window_shift'])})
 
