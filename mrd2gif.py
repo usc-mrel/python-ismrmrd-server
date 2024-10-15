@@ -99,7 +99,7 @@ def main(args):
 
                 imgRois.append((x, y, rgb, thickness))
             rois.append(imgRois)
-        print("  Read in %s images" % (len(images)))
+        print("  Read in %s images of shape %s" % (len(images), images[0].size[::-1]))
 
         hasRois = any([len(x) > 0 for x in rois])
 
@@ -142,6 +142,8 @@ def main(args):
         meta = ismrmrd.Meta.deserialize(image.attribute_string)
         if 'SequenceDescriptionAdditional' in meta.keys():
             seqDescription = '_' + meta['SequenceDescriptionAdditional']
+        elif 'GADGETRON_SeqDescription' in meta.keys():
+            seqDescription = '_'.join(meta['GADGETRON_SeqDescription'])
         else:
             seqDescription = ''
 
