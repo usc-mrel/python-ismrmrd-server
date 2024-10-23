@@ -84,6 +84,12 @@ def main(args):
                         data = np.squeeze(image.data[cha,sli,...]) # image.data is [cha z y x] -- squeeze to [y x] for [row col]
                         images.append(Image.fromarray(data))
 
+            if image.data.shape[0] > 1:
+                print("  Image %d has %d channels" % (imgNum, image.data.shape[0]))
+
+            if image.data.shape[1] > 2:
+                print("  Image %d is a 3D volume with %d slices" % (imgNum, image.data.shape[1]))
+
             # Read ROIs
             meta = ismrmrd.Meta.deserialize(image.attribute_string)
             imgRois = []
@@ -98,7 +104,11 @@ def main(args):
                     continue
 
                 imgRois.append((x, y, rgb, thickness))
-            rois.append(imgRois)
+
+            #  Same ROIs for each channel and slice
+            for chasli in range(image.data.shape[0]*image.data.shape[1]):
+                rois.append(imgRois)
+
         print("  Read in %s images of shape %s" % (len(images), images[0].size[::-1]))
 
         hasRois = any([len(x) > 0 for x in rois])
