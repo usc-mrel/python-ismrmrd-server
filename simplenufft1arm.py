@@ -21,11 +21,10 @@ def process(connection, config, metadata):
     logging.disable(logging.DEBUG)
     
     logging.info("Config: \n%s", config)
-    logging.info("Metadata: \n%s", metadata)
+    # logging.info("Metadata: \n%s", metadata)
 
     # We now read these parameters from toml file, so that we won't have to keep restarting the server when we change them.
-    logging.info('''================================================================
-                 Loading and applying file configs/rtspiral_vs_config.toml''')
+    logging.info('''Loading and applying file configs/rtspiral_vs_config.toml''')
     with open('configs/rtspiral_vs_config.toml') as jf:
         cfg = rtoml.load(jf)
         n_arm_per_frame = cfg['reconstruction']['arms_per_frame']
@@ -35,11 +34,13 @@ def process(connection, config, metadata):
         coil_combine    = cfg['reconstruction']['coil_combine']
         save_complex    = cfg['reconstruction']['save_complex']
 
-    logging.info(f'''Arms per frame: {n_arm_per_frame}
+    logging.info(f'''
+                 ================================================================
+                 Arms per frame: {n_arm_per_frame}
                  Apply GIRF?: {APPLY_GIRF}
                  GPU Device: {gpu_device}
                  Coil Combine: {coil_combine}
-                 Save Complex: {save_complex}\n
+                 Save Complex: {save_complex}
                  =================================================================''')
     
     # start = time.perf_counter()
@@ -245,8 +246,9 @@ def process_group(group, frames: list, sens: npt.ArrayLike, device, rep, config,
                          'WindowCenter':           str((maxVal+1)/2),
                          'WindowWidth':            str((maxVal+1)),
                          'NumArmsPerFrame':        str(config['reconstruction']['arms_per_frame']),
-                         'GriddingWindowShift':    str(config['reconstruction']['window_shift'])}, 
-                         'ImageScaleFactor',       str(dscale))
+                         'GriddingWindowShift':    str(config['reconstruction']['window_shift']), 
+                         'ImageScaleFactor':       str(dscale)
+                         })
 
     # Add image orientation directions to MetaAttributes if not already present
     if meta.get('ImageRowDir') is None:
