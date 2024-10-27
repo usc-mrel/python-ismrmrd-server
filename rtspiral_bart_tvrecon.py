@@ -69,7 +69,7 @@ def process(connection, config, metadata):
         # So we ask it from the metadata.
         try:
             dt = traj['param']['dt'][0,0][0,0]
-        except:
+        except KeyError:
             dt = 1e-6 # [s]
 
         patient_position = metadata.measurementInformation.patientPosition.value
@@ -80,7 +80,7 @@ def process(connection, config, metadata):
         g_nom = np.stack((gx, -gy), axis=2)
 
         sR = {'T': 0.55}
-        tRR = 3*1e-6/dt
+        tRR = 3e-6/dt
 
 
     ktraj = np.stack((kx, -ky), axis=2)
@@ -91,7 +91,7 @@ def process(connection, config, metadata):
     # swap 0 and 1 axes to make repetitions the first axis (repetitions, interleaves, 2)
     ktraj = np.swapaxes(ktraj, 0, 1)
 
-    msize = np.int16(10 * traj['param']['fov'][0,0][0,0] / traj['param']['spatial_resolution'][0,0][0,0])
+    msize = np.int16(10 * traj['param']['fov'][0,0][0,0] / traj['param']['spatial_resolution'][0,0][0,0] * cfg['reconstruction']['fov_oversampling'])
 
     ktraj = 0.5 * (ktraj / kmax) * msize
 
@@ -200,7 +200,7 @@ def process(connection, config, metadata):
     # CS Reconstruction
     #
     # TODO: nothing limits the time frame we add here.
-    _, rtnlinv_sens_32 = bart.bart(2, 'nlinv -a 32 -b 16  -S -d4 -i13 -x 32:32:1 -t',
+    _, rtnlinv_sens_32 = bart.bart(2, 'nlinv -a 32 -b 16 -S -d4 -i13 -x 32:32:1 -t',
             traj_all, ksp_all)
 
     sens_ksp = np.fft.fftshift(np.fft.ifftn(np.fft.ifftshift(rtnlinv_sens_32, axes=(0,1)), axes=(0, 1)), axes=(0,1))
@@ -271,7 +271,7 @@ def process(connection, config, metadata):
 def estimate_scale_bart(bart, traj, ksp, sens_map) -> float:
     ''' Estimates inverse scaling of the data as BART does. 
     '''
-    first_it = bart.bart(1, 'nufft -g -a ', traj, ksp)
+    first_it = bart.bart(1, f'nufft -g -x {sens_map.shape[0]}:{sens_map.shape[1]}:1 -a ', traj, ksp)
     first_it = np.sum(first_it*np.conj(sens_map[:,:,:,:,None,None,None,None,None,None,None]), axis=3)
     med_ = np.median(np.abs(first_it[:]))
     p90_ = np.percentile(np.abs(first_it[:]), 90)
