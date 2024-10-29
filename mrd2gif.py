@@ -79,13 +79,20 @@ def main(args):
                 data = data.astype(np.uint8)                          # Stored as uint16 as per MRD specification, but uint8 required for PIL
                 images.append(Image.fromarray(data, mode='RGB'))
             else:
-                for cha in range(image.data.shape[0]):
-                    for sli in range(image.data.shape[1]):
-                        data = np.squeeze(image.data[cha,sli,...]) # image.data is [cha z y x] -- squeeze to [y x] for [row col]
-                        images.append(Image.fromarray(data))
+                data = image.data
+                if np.any(np.iscomplex(data)):
+                    print("  Converting image %d from complex to magnitude for display" % imgNum)
+                    data = np.abs(data)
+
+                for cha in range(data.shape[0]):
+                    for sli in range(data.shape[1]):
+                        images.append(Image.fromarray(np.squeeze(data[cha,sli,...])))  # data is [cha z y x] -- squeeze to [y x] for [row col]
 
             if image.data.shape[0] > 1:
-                print("  Image %d has %d channels" % (imgNum, image.data.shape[0]))
+                if image.getHead().image_type == 6:
+                    print("  Image %d is RGB" % imgNum)
+                else:
+                    print("  Image %d has %d channels" % (imgNum, image.data.shape[0]))
 
             if image.data.shape[1] > 2:
                 print("  Image %d is a 3D volume with %d slices" % (imgNum, image.data.shape[1]))
