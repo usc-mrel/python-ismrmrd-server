@@ -124,6 +124,11 @@ def main(args):
         maxVal = np.median([np.percentile(np.array(img), 95) for img in images])
         minVal = np.median([np.percentile(np.array(img),  5) for img in images])
 
+        # Special case for "sparse" images, usually just text
+        if maxVal == minVal:
+            maxVal = np.median([np.max(np.array(img)) for img in images])
+            minVal = np.median([np.min(np.array(img)) for img in images])
+
         imagesWL = []
         for img, roi in zip(images, rois):
             if img.mode != 'RGB':
