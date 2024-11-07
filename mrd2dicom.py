@@ -233,7 +233,7 @@ def main(args):
                 hour = int(np.floor(time_sec/3600))
                 min  = int(np.floor((time_sec - hour*3600)/60))
                 sec  = time_sec - hour*3600 - min*60
-                dicomDset.AcquisitionTime            = "%02.0f%02.0f%02.6f" % (hour, min, sec)
+                dicomDset.AcquisitionTime            = "%02.0f%02.0f%09.6f" % (hour, min, sec)
                 dicomDset.TriggerTime                = mrdImg.physiology_time_stamp[0] / 2.5
 
                 # ----- Update DICOM header from MRD Image MetaAttributes -----
