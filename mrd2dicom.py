@@ -89,6 +89,7 @@ def main(args):
         xml_header = xml_header.decode("utf-8")
         mrdHead = ismrmrd.xsd.CreateFromDocument(xml_header)
 
+    filesWritten = 0
     for group in groups:
         if ( (group == 'config') or (group == 'config_file') or (group == 'xml') ):
             continue
@@ -117,6 +118,7 @@ def main(args):
                     dicomDset = pydicom.dataset.Dataset.from_json(base64.b64decode(meta['DicomJson']))
                 else:
                     dicomDset = pydicom.dataset.Dataset()
+                dicomDset = pydicom.dataset.Dataset()
 
                 # Enforce explicit little endian for written DICOM files
                 dicomDset.file_meta                            = pydicom.dataset.FileMetaDataset()
@@ -276,7 +278,10 @@ def main(args):
                 # Write DICOM files
                 fileName = "%02.0f_%s_%03.0f.dcm" % (dicomDset.SeriesNumber, dicomDset.SeriesDescription, dicomDset.InstanceNumber)
                 print("  Writing file %s" % fileName)
-                dicomDset.save_as(os.path.join(args.out_folder, fileName))
+                dicomDset.save_as(os.path.join(args.out_folder, fileName), enforce_file_format=True)
+                filesWritten += 1
+
+    print("Wrote %d DICOM files to %s" % (filesWritten, args.out_folder))
     return
 
 if __name__ == '__main__':

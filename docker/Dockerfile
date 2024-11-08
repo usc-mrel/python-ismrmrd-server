@@ -65,7 +65,7 @@ RUN cd /opt/code && \
 
 # matplotlib is used by rgb.py and provides various visualization tools including colormaps
 # pydicom is used by dicom2mrd.py to parse DICOM data
-RUN pip3 install --no-cache-dir matplotlib==3.8.2 pydicom==2.4.3
+RUN pip3 install --no-cache-dir matplotlib==3.8.2 pydicom==3.0.1
 
 # Cleanup files not required after installation
 RUN apt-get clean && \
