@@ -7,7 +7,6 @@ import h5py
 import ismrmrd
 import numpy as np
 import pydicom
-import pynetdicom
 import base64
 
 # Lookup table between DICOM and MRD mrdImg types
@@ -122,7 +121,7 @@ def main(args):
                 # Enforce explicit little endian for written DICOM files
                 dicomDset.file_meta                            = pydicom.dataset.FileMetaDataset()
                 dicomDset.file_meta.TransferSyntaxUID          = pydicom.uid.ExplicitVRLittleEndian
-                dicomDset.file_meta.MediaStorageSOPClassUID    = pynetdicom.sop_class.MRImageStorage
+                dicomDset.file_meta.MediaStorageSOPClassUID    = pydicom.uid.MRImageStorage
                 dicomDset.file_meta.MediaStorageSOPInstanceUID = pydicom.uid.generate_uid()
                 pydicom.dataset.validate_file_meta(dicomDset.file_meta)
                 # FileMetaInformationGroupLength is still missing?
