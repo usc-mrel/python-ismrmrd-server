@@ -9,8 +9,9 @@ import mrdhelper
 from PIL import Image, ImageDraw
 
 defaults = {
-    'in_group': '',
-    'rescale':   1
+    'in_group':      '',
+    'rescale':        1,
+    'mosaic_slices': False
 }
 
 def main(args):
@@ -70,6 +71,7 @@ def main(args):
 
         images = []
         rois   = []
+        heads  = []
         for imgNum in range(0, dset.number_of_images(group)):
             image = dset.read_image(group, imgNum)
 
@@ -112,9 +114,13 @@ def main(args):
 
                 imgRois.append((x, y, rgb, thickness))
 
-            #  Same ROIs for each channel and slice
+            # Same ROIs for each channel and slice (in a single MRD image)
             for chasli in range(image.data.shape[0]*image.data.shape[1]):
                 rois.append(imgRois)
+
+            # MRD ImageHeader
+            for chasli in range(image.data.shape[0]*image.data.shape[1]):
+                heads.append(image.getHead())
 
         print("  Read in %s images of shape %s" % (len(images), images[0].size[::-1]))
 
@@ -159,6 +165,27 @@ def main(args):
             else:
                 imagesWL.append(img)
 
+        # Combine multiple slices into a mosaic
+        if args.mosaic_slices:
+            slices = [head.slice for head in heads]
+
+            if np.unique(slices).size > 1:
+                # Create a list where each element is all images from a given slice
+                imagesWLSplit = []
+                for slice in np.unique(slices):
+                    imagesWLSplit.append([img for img, sli in zip(imagesWL, slices) if sli == slice])
+
+                if np.unique([len(imgs) for imgs in imagesWLSplit]).size > 1:
+                    print('  ERROR: Failed to create mosaic because not all slices have the same number of images -- skipping mosaic!')
+                else:
+                    print(f'  Creating a mosaic of {len(imagesWLSplit[0])} images with {np.unique(slices).size} slices in each')
+
+                    # Loop over non-slice dimension
+                    imagesWLMosaic = []
+                    for idx in range(len(imagesWLSplit[0])):
+                        imagesWLMosaic.append(Image.fromarray(np.hstack([img[idx] for img in imagesWLSplit])))
+                    imagesWL = imagesWLMosaic
+
         # Add SequenceDescriptionAdditional to filename, if present
         image = dset.read_image(group, 0)
         meta = ismrmrd.Meta.deserialize(image.attribute_string)
@@ -186,9 +213,10 @@ def main(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Convert MRD image file to animated GIF',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument('filename',                   help='Input file')
-    parser.add_argument('-g', '--in-group',           help='Input data group')
-    parser.add_argument('-r', '--rescale',  type=int, help='Rescale factor (integer) for output images')
+    parser.add_argument('filename',                                   help='Input file')
+    parser.add_argument('-g', '--in-group',                           help='Input data group')
+    parser.add_argument('-r', '--rescale',       type=int,            help='Rescale factor (integer) for output images')
+    parser.add_argument('-m', '--mosaic-slices', action='store_true', help='Mosaic images along slice dimension')
 
     parser.set_defaults(**defaults)
 
