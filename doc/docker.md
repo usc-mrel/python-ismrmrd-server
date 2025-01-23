@@ -115,7 +115,7 @@ A set of scripts is provided to automate the creation of chroot images from Dock
         ./docker_to_chroot.sh kspacekelvin/fire-python fire-python-chroot.img
     ```
 
-The first argument is the name of the (existing) Docker image and the second argument is the chroot image file to be created.  Note that both the [docker_to_chroot.bat](/docker/docker_to_chroot.bat) and [docker_to_chroot.sh](/docker/docker_to_chroot.sh) scripts require the [docker_tar_to_chroot.sh](/docker/docker_tar_to_chroot.sh) script that is also in the docker folder.
+The first argument is the name of the (existing) Docker image and the second argument is the chroot image file to be created.  An optional third argument can be used to specify the free space buffer added to the chroot in MB (default 50 MB).  Note that both the [docker_to_chroot.bat](/docker/docker_to_chroot.bat) and [docker_to_chroot.sh](/docker/docker_to_chroot.sh) scripts require the [docker_tar_to_chroot.sh](/docker/docker_tar_to_chroot.sh) script that is also in the docker folder.
 
 #### Manual creation of a chroot image
 The following steps can be used to manually create a chroot image from a Docker image.  These steps are the same as those automated by the ``docker_to_chroot`` scripts above.  Here they are performed within a Linux Docker image, but they can also be run on a Linux system natively.
