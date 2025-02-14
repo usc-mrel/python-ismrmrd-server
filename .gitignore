@@ -10,3 +10,4 @@ seq_meta/
 testdata/
 .vscode/
 configs/
+.micromamba/

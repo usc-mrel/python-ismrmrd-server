@@ -27,12 +27,14 @@ def process(connection, config, metadata):
     logging.info('''Loading and applying file configs/rtspiral_vs_config.toml''')
     with open('configs/rtspiral_vs_config.toml') as jf:
         cfg = rtoml.load(jf)
-        n_arm_per_frame = cfg['reconstruction']['arms_per_frame']
-        window_shift    = cfg['reconstruction']['window_shift']
-        APPLY_GIRF      = cfg['reconstruction']['apply_girf']
-        gpu_device      = cfg['reconstruction']['gpu_device']
-        coil_combine    = cfg['reconstruction']['coil_combine']
-        save_complex    = cfg['reconstruction']['save_complex']
+
+    n_arm_per_frame = cfg['reconstruction']['arms_per_frame']
+    window_shift    = cfg['reconstruction']['window_shift']
+    APPLY_GIRF      = cfg['reconstruction']['apply_girf']
+    gpu_device      = cfg['reconstruction']['gpu_device']
+    coil_combine    = cfg['reconstruction']['coil_combine']
+    save_complex    = cfg['reconstruction']['save_complex']
+    ignore_arms_per_frame = cfg['reconstruction']['ignore_arms_per_frame']
 
     logging.info(f'''
                  ================================================================
@@ -50,10 +52,16 @@ def process(connection, config, metadata):
     # load the .mat file containing the trajectory
     traj = loadmat("seq_meta/" + traj_name)
 
-    n_unique_angles = traj['param']['repetitions'][0,0][0,0]
+    if ignore_arms_per_frame:
+        n_arm_per_frame = int(traj['param']['interleaves'][0,0][0,0])
+        window_shift = n_arm_per_frame
+        logging.info(f"Overriding arms per frame to {n_arm_per_frame} and window shift to {window_shift}")
 
-    kx = traj['kx'][:,:]
-    ky = traj['ky'][:,:]
+    n_unique_angles = int(traj['param']['interleaves'][0,0][0,0])
+    nTRs = traj['param']['repetitions'][0,0][0,0]
+
+    kx = traj['kx'][:,:n_unique_angles]
+    ky = traj['ky'][:,:n_unique_angles]
 
 
     # Prepare gradients and variables if GIRF is requested. 
