@@ -2,6 +2,11 @@ name: ci
 
 on:
   push:
+    branches:
+      - main
+      - 'feature/*'
+    tags:
+      - 'v*.*.*'
 
 jobs:
   docker:
@@ -25,4 +30,6 @@ jobs:
         with:
           file: docker/Dockerfile
           push: true
-          tags: kspacekelvin/fire-python:latest
+          tags: |
+            kspacekelvin/fire-python:latest
+            kspacekelvin/fire-python:${{ github.ref_name }}
