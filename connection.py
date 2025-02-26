@@ -251,6 +251,9 @@ class Connection:
 
     def read_close(self):
         logging.info("<-- Received MRD_MESSAGE_CLOSE (4)")
+        logging.info("    Total received acquisitions: %5d", self.recvAcqs)
+        logging.info("    Total received images:       %5d", self.recvImages)
+        logging.info("    Total received waveforms:    %5d", self.recvWaveforms)
 
         if self.savedata is True:
             if self.dset is None:
