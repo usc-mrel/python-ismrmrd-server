@@ -254,6 +254,7 @@ class Connection:
         logging.info("    Total received acquisitions: %5d", self.recvAcqs)
         logging.info("    Total received images:       %5d", self.recvImages)
         logging.info("    Total received waveforms:    %5d", self.recvWaveforms)
+        logging.info("------------------------------------------")
 
         if self.savedata is True:
             if self.dset is None:
