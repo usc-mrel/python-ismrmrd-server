@@ -72,6 +72,7 @@ def main(args):
         images = []
         rois   = []
         heads  = []
+        metas  = []
         for imgNum in range(0, dset.number_of_images(group)):
             image = dset.read_image(group, imgNum)
 
@@ -103,7 +104,7 @@ def main(args):
             meta = ismrmrd.Meta.deserialize(image.attribute_string)
             imgRois = []
             for key in meta.keys():
-                if not key.startswith('ROI_'):
+                if not key.startswith('ROI_') and not key.startswith('GT_ROI_'):
                     continue
 
                 roi = meta[key]
@@ -122,21 +123,35 @@ def main(args):
             for chasli in range(image.data.shape[0]*image.data.shape[1]):
                 heads.append(image.getHead())
 
+            for chasli in range(image.data.shape[0]*image.data.shape[1]):
+                metas.append(meta)
+
         print("  Read in %s images of shape %s" % (len(images), images[0].size[::-1]))
 
         hasRois = any([len(x) > 0 for x in rois])
 
-        # Window/level images
-        maxVal = np.median([np.percentile(np.array(img), 95) for img in images])
-        minVal = np.median([np.percentile(np.array(img),  5) for img in images])
+        # Window/level for all images in series
+        seriesMaxVal = np.median([np.percentile(np.array(img), 95) for img in images])
+        seriesMinVal = np.median([np.percentile(np.array(img),  5) for img in images])
 
         # Special case for "sparse" images, usually just text
-        if maxVal == minVal:
-            maxVal = np.median([np.max(np.array(img)) for img in images])
-            minVal = np.median([np.min(np.array(img)) for img in images])
+        if seriesMaxVal == seriesMinVal:
+            seriesMaxVal = np.median([np.max(np.array(img)) for img in images])
+            seriesMinVal = np.median([np.min(np.array(img)) for img in images])
 
         imagesWL = []
-        for img, roi in zip(images, rois):
+        for img, roi, meta in zip(images, rois, metas):
+            # Use window/level from MetaAttributes if available
+            minVal = seriesMinVal
+            maxVal = seriesMaxVal
+
+            if (('WindowCenter' in meta) and ('WindowWidth' in meta)):
+                minVal = float(meta['WindowCenter']) - float(meta['WindowWidth'])/2
+                maxVal = float(meta['WindowCenter']) + float(meta['WindowWidth'])/2
+            elif (('GADGETRON_WindowCenter' in meta) and ('GADGETRON_WindowWidth' in meta)):
+                minVal = float(meta['GADGETRON_WindowCenter']) - float(meta['GADGETRON_WindowWidth'])/2
+                maxVal = float(meta['GADGETRON_WindowCenter']) + float(meta['GADGETRON_WindowWidth'])/2
+
             if img.mode != 'RGB':
                 if hasRois:
                     # Convert to RGB mode to allow colored ROI overlays
