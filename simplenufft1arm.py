@@ -6,6 +6,7 @@ import numpy.typing as npt
 import ctypes
 import mrdhelper
 import time
+import os
 import rtoml
 
 from scipy.io import loadmat
@@ -35,6 +36,7 @@ def process(connection, config, metadata):
     coil_combine    = cfg['reconstruction']['coil_combine']
     save_complex    = cfg['reconstruction']['save_complex']
     ignore_arms_per_frame = cfg['reconstruction']['ignore_arms_per_frame']
+    metafile_paths = cfg['metafile_paths']
 
     logging.info(f'''
                  ================================================================
@@ -50,7 +52,16 @@ def process(connection, config, metadata):
     traj_name = metadata.userParameters.userParameterString[1].value
 
     # load the .mat file containing the trajectory
-    traj = loadmat("seq_meta/" + traj_name)
+    # Search for the file in the metafile_paths
+    for path in metafile_paths:
+        metafile_fullpath = os.path.join(path, traj_name + ".mat")
+        if os.path.isfile(metafile_fullpath):
+            logging.info(f"Loading metafile {traj_name} from {path}...")
+            traj = loadmat(metafile_fullpath)
+            break
+    else:
+        logging.error(f"Trajectory file {traj_name}.mat not found in specified paths.")
+        return
 
     if ignore_arms_per_frame:
         n_arm_per_frame = int(traj['param']['interleaves'][0,0][0,0])
@@ -191,7 +202,7 @@ def process(connection, config, metadata):
         connection.send_waveform(wf)
 
     connection.send_close()
-    print('Reconstruction is finished.')
+    logging.debug('Reconstruction is finished.')
 
 
 def process_csm(frames):
