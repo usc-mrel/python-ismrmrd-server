@@ -111,82 +111,83 @@ def process(connection: Connection, config, metadata):
         if arm is None:
             break # End of acq
         # First arm came, if GIRF is requested, correct trajectories and reupload.
-        if (arm.idx.kspace_encode_step_1 == 0): 
-            r_GCS2RCS = np.array(  [[0,    1,   0],  # [PE]   [0 1 0] * [r]
-                                    [1,    0,   0],  # [RO] = [1 0 0] * [c]
-                                    [0,    0,   1]]) # [SL]   [0 0 1] * [s]
-            r_GCS2PCS = np.array([np.array(arm.phase_dir), -np.array(arm.read_dir), arm.slice_dir])
-            r_GCS2DCS = r_PCS2DCS.dot(r_GCS2PCS)
-            PCS_offset = np.array([-1, 1, 1])*np.array(arm.position)*1e-3
-            GCS_offset = r_GCS2PCS.T.dot(PCS_offset)
-            RCS_offset = r_GCS2RCS.dot(GCS_offset)
+        if type(arm) is ismrmrd.Acquisition:
+            if (arm.idx.kspace_encode_step_1 == 0): 
+                r_GCS2RCS = np.array(  [[0,    1,   0],  # [PE]   [0 1 0] * [r]
+                                        [1,    0,   0],  # [RO] = [1 0 0] * [c]
+                                        [0,    0,   1]]) # [SL]   [0 0 1] * [s]
+                r_GCS2PCS = np.array([np.array(arm.phase_dir), -np.array(arm.read_dir), arm.slice_dir])
+                r_GCS2DCS = r_PCS2DCS.dot(r_GCS2PCS)
+                PCS_offset = np.array([-1, 1, 1])*np.array(arm.position)*1e-3
+                GCS_offset = r_GCS2PCS.T.dot(PCS_offset)
+                RCS_offset = r_GCS2RCS.dot(GCS_offset)
 
-            t = np.arange(0, arm.data.shape[1])*dt
-            df = 1/(dt*arm.data.shape[1])
-            ksp_window = np.ones(arm.data.shape)
+                t = np.arange(0, arm.data.shape[1])*dt
+                df = 1/(dt*arm.data.shape[1])
+                ksp_window = np.ones(arm.data.shape)
+
+                # ================================
+                # Demodulate any shifts
+                # ================================
+                thet = np.exp(-1j*np.cumsum(2*np.pi*gbar*np.sum(g_gcs*RCS_offset, axis=2), axis=0)*dt) # [rad]
+
+                if APPLY_GIRF:
+                    sR['R'] = r_GCS2DCS
+                    k_pred, _ = GIRF.apply_GIRF(g_nom, dt, sR, tRR)
+                    k_pred = np.flip(k_pred[:,:,0:2], axis=2) # Drop the z
+                    kmax = np.max(np.abs(k_pred[:,:,0] + 1j * k_pred[:,:,1]))
+                    k_pred = np.swapaxes(k_pred, 0, 1)
+                    k_pred = 0.5 * (k_pred / kmax) * msize
+                    coord_gpu = sp.to_device(k_pred, device=device) # Replace  the original k-space
+
+            # PT processing routine
+
+            # Apply the negative of the phase
+            data_demod = arm.data*thet[:, arm_counter]
 
             # ================================
-            # Demodulate any shifts
+            # Fine tune the PT frequency. 
+            # Fit and subtract the PT.
             # ================================
-            thet = np.exp(-1j*np.cumsum(2*np.pi*gbar*np.sum(g_gcs*RCS_offset, axis=2), axis=0)*dt) # [rad]
+            fcorrmin = pt.find_freq_qifft(data_demod.T, df, fdiff, 3e3, 4, (1))
+            fcorrmin_l.append(fcorrmin)
+            ksp_ptsubbed, pt_sig_fit = pt.est_dtft(t, data_demod.T, np.array([fdiff])-fcorrmin, ksp_window)
+            pt_sig.append(np.abs(pt_sig_fit))
+            # pl.plot(np.abs(pt_sig_fit[0]))
+            # data_bytes = pt_sig[-1].tobytes()
+            # client_socket.sendall(data_bytes)
 
-            if APPLY_GIRF:
-                sR['R'] = r_GCS2DCS
-                k_pred, _ = GIRF.apply_GIRF(g_nom, dt, sR, tRR)
-                k_pred = np.flip(k_pred[:,:,0:2], axis=2) # Drop the z
-                kmax = np.max(np.abs(k_pred[:,:,0] + 1j * k_pred[:,:,1]))
-                k_pred = np.swapaxes(k_pred, 0, 1)
-                k_pred = 0.5 * (k_pred / kmax) * msize
-                coord_gpu = sp.to_device(k_pred, device=device) # Replace  the original k-space
+            startarm = time.perf_counter()
+            adata = sp.to_device(arm.data[:,pre_discard:], device=device)
 
-        # PT processing routine
+            with device:
+                frames.append(fourier.nufft_adjoint(
+                        adata*w_gpu,
+                        coord_gpu[arm_counter,:,:],
+                        (nchannel, msize, msize)))
+            # frames.append(sp.nufft_adjoint(arm.data[:,pre_discard:] * w, ktraj[arm_counter,:,:], oshape=(nchannel, msize, msize)))
 
-        # Apply the negative of the phase
-        data_demod = arm.data*thet[:, arm_counter]
+            endarm = time.perf_counter()
+            # print(f"Elapsed time for arm {arm_counter} NUFFT: {(endarm-startarm)*1e3} ms.")
 
-        # ================================
-        # Fine tune the PT frequency. 
-        # Fit and subtract the PT.
-        # ================================
-        fcorrmin = pt.find_freq_qifft(data_demod.T, df, fdiff, 3e3, 4, (1))
-        fcorrmin_l.append(fcorrmin)
-        ksp_ptsubbed, pt_sig_fit = pt.est_dtft(t, data_demod.T, np.array([fdiff])-fcorrmin, ksp_window)
-        pt_sig.append(np.abs(pt_sig_fit))
-        # pl.plot(np.abs(pt_sig_fit[0]))
-        # data_bytes = pt_sig[-1].tobytes()
-        # client_socket.sendall(data_bytes)
+            arm_counter += 1
+            if arm_counter == n_unique_angles:
+                arm_counter = 0
 
-        startarm = time.perf_counter()
-        adata = sp.to_device(arm.data[:,pre_discard:], device=device)
+            if ((arm.idx.kspace_encode_step_1+1) % n_arm_per_frame) == 0:
+                # start = time.perf_counter()
+                image = process_group(arm, frames, device, rep_counter, config, metadata)
+                # end = time.perf_counter()
 
-        with device:
-            frames.append(fourier.nufft_adjoint(
-                    adata*w_gpu,
-                    coord_gpu[arm_counter,:,:],
-                    (nchannel, msize, msize)))
-        # frames.append(sp.nufft_adjoint(arm.data[:,pre_discard:] * w, ktraj[arm_counter,:,:], oshape=(nchannel, msize, msize)))
+                # print(f"Elapsed time for frame processing: {end-start} secs.")
+                frames = []
+                logging.debug("Sending image to client:\n%s", image)
+                connection.send_image(image)
 
-        endarm = time.perf_counter()
-        # print(f"Elapsed time for arm {arm_counter} NUFFT: {(endarm-startarm)*1e3} ms.")
-
-        arm_counter += 1
-        if arm_counter == n_unique_angles:
-            arm_counter = 0
-
-        if ((arm.idx.kspace_encode_step_1+1) % n_arm_per_frame) == 0:
-            # start = time.perf_counter()
-            image = process_group(arm, frames, device, rep_counter, config, metadata)
-            # end = time.perf_counter()
-
-            # print(f"Elapsed time for frame processing: {end-start} secs.")
-            frames = []
-            logging.debug("Sending image to client:\n%s", image)
-            connection.send_image(image)
-
-            rep_counter += 1
-            # plt.plot(pt_sig)
-            # plt.draw()
-            # plt.pause(0.1)
+                rep_counter += 1
+                # plt.plot(pt_sig)
+                # plt.draw()
+                # plt.pause(0.1)
 
     pt_waveform = process_pilottone(np.array(pt_sig).T, metadata)
     connection.send_waveform(pt_waveform)
@@ -269,6 +270,7 @@ def process_pilottone(pt_sig: np.ndarray, metadata):
         BitsStored = mrdhelper.get_userParameterLong_value(metadata, "BitsStored")
     maxVal = 2**BitsStored - 1
 
+    pt_sig = pt_sig - np.mean(pt_sig, axis=1, keepdims=True)
     # Normalize and convert to int16
     pt_sig *= maxVal/pt_sig.max()
     pt_sig = np.around(pt_sig)
@@ -276,11 +278,14 @@ def process_pilottone(pt_sig: np.ndarray, metadata):
     pt_wave = ismrmrd.Waveform.from_array(pt_sig)
     pt_wave.sample_time_us = dt_pt*1e3
 
-    # client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    # client_socket.connect(('127.0.0.1', 12345))  # Use the same host and port as the server
+    client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    client_socket.connect(('127.0.0.1', 12345))  # Use the same host and port as the server
+    import pickle
+    wvfrmd = {'signal': pt_sig, 'dt': dt_pt*1e-3, 'coil_labels': metadata.acquisitionSystemInformation.coilLabel}
+    data_bytes = pickle.dumps(wvfrmd)
     # data_bytes = pt_sig.tobytes()
-    # client_socket.sendall(data_bytes)
-    # client_socket.close()
+    client_socket.sendall(data_bytes)
+    client_socket.close()
     # Let's attempt hijacking mrd's waveform
     return pt_wave
 
