@@ -152,12 +152,12 @@ class Connection:
     #   Config file name (1024 bytes, char          )
     def send_config_file(self, filename):
         with self.lock:
-            logging.info("--> Sending MRD_MESSAGE_CONFIG_FILE (1)")
+            logging.debug("--> Sending MRD_MESSAGE_CONFIG_FILE (1)")
             self.socket.send(constants.MrdMessageIdentifier.pack(constants.MRD_MESSAGE_CONFIG_FILE))
             self.socket.send(constants.MrdMessageConfigurationFile.pack(filename.encode()))
 
     def read_config_file(self):
-        logging.info("<-- Received MRD_MESSAGE_CONFIG_FILE (1)")
+        logging.debug("<-- Received MRD_MESSAGE_CONFIG_FILE (1)")
         config_file_bytes = self.read(constants.SIZEOF_MRD_MESSAGE_CONFIGURATION_FILE)
         config_file = constants.MrdMessageConfigurationFile.unpack(config_file_bytes)[0]
         config_file = config_file.split(b'\x00',1)[0].decode('utf-8')  # Strip off null terminators in fixed 1024 size
@@ -190,14 +190,14 @@ class Connection:
     #   Config text data (  variable, char          )
     def send_config_text(self, contents):
         with self.lock:
-            logging.info("--> Sending MRD_MESSAGE_CONFIG_TEXT (2)")
+            logging.debug("--> Sending MRD_MESSAGE_CONFIG_TEXT (2)")
             self.socket.send(constants.MrdMessageIdentifier.pack(constants.MRD_MESSAGE_CONFIG_TEXT))
             contents_with_nul = '%s\0' % contents # Add null terminator
             self.socket.send(constants.MrdMessageLength.pack(len(contents_with_nul.encode())))
             self.socket.send(contents_with_nul.encode())
 
     def read_config_text(self):
-        logging.info("<-- Received MRD_MESSAGE_CONFIG_TEXT (2)")
+        logging.debug("<-- Received MRD_MESSAGE_CONFIG_TEXT (2)")
         length = self.read_mrd_message_length()
         config = self.read(length)
         config = config.split(b'\x00',1)[0].decode('utf-8')  # Strip off null teminator
@@ -221,14 +221,14 @@ class Connection:
     #   Text xml data    (  variable, char          )
     def send_metadata(self, contents):
         with self.lock:
-            logging.info("--> Sending MRD_MESSAGE_METADATA_XML_TEXT (3)")
+            logging.debug("--> Sending MRD_MESSAGE_METADATA_XML_TEXT (3)")
             self.socket.send(constants.MrdMessageIdentifier.pack(constants.MRD_MESSAGE_METADATA_XML_TEXT))
             contents_with_nul = '%s\0' % contents # Add null terminator
             self.socket.send(constants.MrdMessageLength.pack(len(contents_with_nul.encode())))
             self.socket.send(contents_with_nul.encode())
 
     def read_metadata(self):
-        logging.info("<-- Received MRD_MESSAGE_METADATA_XML_TEXT (3)")
+        logging.debug("<-- Received MRD_MESSAGE_METADATA_XML_TEXT (3)")
         length = self.read_mrd_message_length()
         metadata = self.read(length)
         metadata = metadata.split(b'\x00',1)[0].decode('utf-8')  # Strip off null teminator
@@ -246,7 +246,7 @@ class Connection:
     # This message signals that all data has been sent (either from server or client).
     def send_close(self):
         with self.lock:
-            logging.info("--> Sending MRD_MESSAGE_CLOSE (4)")
+            logging.debug("--> Sending MRD_MESSAGE_CLOSE (4)")
             self.socket.send(constants.MrdMessageIdentifier.pack(constants.MRD_MESSAGE_CLOSE))
 
     def read_close(self):
@@ -255,6 +255,7 @@ class Connection:
         logging.info("    Total received images:       %5d", self.recvImages)
         logging.info("    Total received waveforms:    %5d", self.recvWaveforms)
         logging.info("------------------------------------------")
+
 
         if self.savedata is True:
             if self.dset is None:
@@ -275,15 +276,15 @@ class Connection:
     #   Text data        (  variable, char          )
     def send_text(self, contents):
         with self.lock:
-            logging.info("--> Sending MRD_MESSAGE_TEXT (5)")
-            logging.info("    %s", contents)
+            logging.debug("--> Sending MRD_MESSAGE_TEXT (5)")
+            logging.debug("    %s", contents)
             self.socket.send(constants.MrdMessageIdentifier.pack(constants.MRD_MESSAGE_TEXT))
             contents_with_nul = '%s\0' % contents # Add null terminator
             self.socket.send(constants.MrdMessageLength.pack(len(contents_with_nul.encode())))
             self.socket.send(contents_with_nul.encode())
 
     def read_text(self):
-        logging.info("<-- Received MRD_MESSAGE_TEXT (5)")
+        logging.debug("<-- Received MRD_MESSAGE_TEXT (5)")
         length = self.read_mrd_message_length()
         text = self.read(length)
         text = text.split(b'\x00',1)[0].decode('utf-8')  # Strip off null teminator
@@ -301,7 +302,7 @@ class Connection:
         with self.lock:
             self.sentAcqs += 1
             if (self.sentAcqs == 1) or (self.sentAcqs % 100 == 0):
-                logging.info("--> Sending MRD_MESSAGE_ISMRMRD_ACQUISITION (1008) (total: %d)", self.sentAcqs)
+                logging.debug("--> Sending MRD_MESSAGE_ISMRMRD_ACQUISITION (1008) (total: %d)", self.sentAcqs)
 
             self.socket.send(constants.MrdMessageIdentifier.pack(constants.MRD_MESSAGE_ISMRMRD_ACQUISITION))
             acquisition.serialize_into(self.socket.send)
@@ -309,7 +310,7 @@ class Connection:
     def read_acquisition(self):
         self.recvAcqs += 1
         if (self.recvAcqs == 1) or (self.recvAcqs % 100 == 0):
-            logging.info("<-- Received MRD_MESSAGE_ISMRMRD_ACQUISITION (1008) (total: %d)", self.recvAcqs)
+            logging.debug("<-- Received MRD_MESSAGE_ISMRMRD_ACQUISITION (1008) (total: %d)", self.recvAcqs)
 
         acq = ismrmrd.Acquisition.deserialize_from(self.read)
 
@@ -334,7 +335,7 @@ class Connection:
             if not isinstance(images, list):
                 images = [images]
 
-            logging.info("--> Sending MRD_MESSAGE_ISMRMRD_IMAGE (1022) (%d images)", len(images))
+            logging.debug("--> Sending MRD_MESSAGE_ISMRMRD_IMAGE (1022) (%d images)", len(images))
             for image in images:
                 if image is None:
                     continue
@@ -351,7 +352,7 @@ class Connection:
 
     def read_image(self):
         self.recvImages += 1
-        logging.info("<-- Received MRD_MESSAGE_ISMRMRD_IMAGE (1022)")
+        logging.debug("<-- Received MRD_MESSAGE_ISMRMRD_IMAGE (1022)")
         # return ismrmrd.Image.deserialize_from(self.read)
 
         # Explicit version of deserialize_from() for more verbose debugging
@@ -370,7 +371,7 @@ class Connection:
 
         image = ismrmrd.Image(header_bytes, attribute_bytes.split(b'\x00',1)[0].decode('utf-8'))  # Strip off null teminator
 
-        logging.info("    Image is size %d x %d x %d with %d channels of type %s", image.getHead().matrix_size[0], image.getHead().matrix_size[1], image.getHead().matrix_size[2], image.channels, ismrmrd.get_dtype_from_data_type(image.data_type))
+        logging.debug("    Image is size %d x %d x %d with %d channels of type %s", image.getHead().matrix_size[0], image.getHead().matrix_size[1], image.getHead().matrix_size[2], image.channels, ismrmrd.get_dtype_from_data_type(image.data_type))
         def calculate_number_of_entries(nchannels, xs, ys, zs):
             return nchannels * xs * ys * zs
 
@@ -399,7 +400,7 @@ class Connection:
         with self.lock:
             self.sentWaveforms += 1
             if (self.sentWaveforms == 1) or (self.sentWaveforms % 100 == 0):
-                logging.info("--> Sending MRD_MESSAGE_ISMRMRD_WAVEFORM (1026) (total: %d)", self.sentWaveforms)
+                logging.debug("--> Sending MRD_MESSAGE_ISMRMRD_WAVEFORM (1026) (total: %d)", self.sentWaveforms)
 
             self.socket.send(constants.MrdMessageIdentifier.pack(constants.MRD_MESSAGE_ISMRMRD_WAVEFORM))
             waveform.serialize_into(self.socket.send)
@@ -407,7 +408,7 @@ class Connection:
     def read_waveform(self):
         self.recvWaveforms += 1
         if (self.recvWaveforms == 1) or (self.recvWaveforms % 100 == 0):
-            logging.info("<-- Received MRD_MESSAGE_ISMRMRD_WAVEFORM (1026) (total: %d)", self.recvWaveforms)
+            logging.debug("<-- Received MRD_MESSAGE_ISMRMRD_WAVEFORM (1026) (total: %d)", self.recvWaveforms)
 
         waveform = ismrmrd.Waveform.deserialize_from(self.read)
 

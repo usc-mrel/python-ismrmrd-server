@@ -11,9 +11,11 @@ import os
 import json
 import signal
 
+# Pre-import commonly used recons to warm start them.
 import simplefft
 import invertcontrast
 import analyzeflow
+import simplenufft1arm
 
 class Server:
     """
