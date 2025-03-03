@@ -11,3 +11,4 @@ testdata/
 .vscode/
 configs/
 .micromamba/
+venv/
