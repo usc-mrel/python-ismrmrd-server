@@ -1,5 +1,3 @@
-
-
 import constants
 import ismrmrd
 import ctypes
@@ -161,8 +159,8 @@ class Connection:
     def read_config_file(self):
         logging.debug("<-- Received MRD_MESSAGE_CONFIG_FILE (1)")
         config_file_bytes = self.read(constants.SIZEOF_MRD_MESSAGE_CONFIGURATION_FILE)
-        config_file = constants.MrdMessageConfigurationFile.unpack(config_file_bytes)[0].decode("utf-8")
-        config_file = config_file.split('\x00',1)[0]  # Strip off null terminators in fixed 1024 size
+        config_file = constants.MrdMessageConfigurationFile.unpack(config_file_bytes)[0]
+        config_file = config_file.split(b'\x00',1)[0].decode('utf-8')  # Strip off null terminators in fixed 1024 size
 
         logging.debug("    " + config_file)
         if (config_file == "savedataonly"):
@@ -202,7 +200,7 @@ class Connection:
         logging.debug("<-- Received MRD_MESSAGE_CONFIG_TEXT (2)")
         length = self.read_mrd_message_length()
         config = self.read(length)
-        config = config.decode("utf-8").split('\x00',1)[0]  # Strip off null teminator
+        config = config.split(b'\x00',1)[0].decode('utf-8')  # Strip off null teminator
 
         if self.savedata is True:
             if self.dset is None:
@@ -233,7 +231,7 @@ class Connection:
         logging.debug("<-- Received MRD_MESSAGE_METADATA_XML_TEXT (3)")
         length = self.read_mrd_message_length()
         metadata = self.read(length)
-        metadata = metadata.decode("utf-8").split('\x00',1)[0]  # Strip off null teminator
+        metadata = metadata.split(b'\x00',1)[0].decode('utf-8')  # Strip off null teminator
 
         if self.savedata is True:
             if self.dset is None:
@@ -252,7 +250,12 @@ class Connection:
             self.socket.send(constants.MrdMessageIdentifier.pack(constants.MRD_MESSAGE_CLOSE))
 
     def read_close(self):
-        logging.debug("<-- Received MRD_MESSAGE_CLOSE (4)")
+        logging.info("<-- Received MRD_MESSAGE_CLOSE (4)")
+        logging.info("    Total received acquisitions: %5d", self.recvAcqs)
+        logging.info("    Total received images:       %5d", self.recvImages)
+        logging.info("    Total received waveforms:    %5d", self.recvWaveforms)
+        logging.info("------------------------------------------")
+
 
         if self.savedata is True:
             if self.dset is None:
@@ -284,8 +287,8 @@ class Connection:
         logging.debug("<-- Received MRD_MESSAGE_TEXT (5)")
         length = self.read_mrd_message_length()
         text = self.read(length)
-        text = text.decode("utf-8").split('\x00',1)[0]  # Strip off null teminator
-        logging.debug("    %s", text)
+        text = text.split(b'\x00',1)[0].decode('utf-8')  # Strip off null teminator
+        logging.info("    %s", text)
         return text
 
     # ----- MRD_MESSAGE_ISMRMRD_ACQUISITION (1008) -----------------------------
@@ -366,7 +369,7 @@ class Connection:
         else:
             logging.debug("   Attributes: %s", attribute_bytes.decode('utf-8'))
 
-        image = ismrmrd.Image(header_bytes, attribute_bytes.decode('utf-8').split('\x00',1)[0])  # Strip off null teminator
+        image = ismrmrd.Image(header_bytes, attribute_bytes.split(b'\x00',1)[0].decode('utf-8'))  # Strip off null teminator
 
         logging.debug("    Image is size %d x %d x %d with %d channels of type %s", image.getHead().matrix_size[0], image.getHead().matrix_size[1], image.getHead().matrix_size[2], image.channels, ismrmrd.get_dtype_from_data_type(image.data_type))
         def calculate_number_of_entries(nchannels, xs, ys, zs):

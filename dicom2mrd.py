@@ -43,7 +43,10 @@ def CreateMrdHeader(dset):
     mrdHead.acquisitionSystemInformation.systemVendor          = dset.Manufacturer
     mrdHead.acquisitionSystemInformation.systemModel           = dset.ManufacturerModelName
     mrdHead.acquisitionSystemInformation.systemFieldStrength_T = float(dset.MagneticFieldStrength)
-    mrdHead.acquisitionSystemInformation.institutionName       = dset.InstitutionName
+    try:
+        mrdHead.acquisitionSystemInformation.institutionName       = dset.InstitutionName
+    except:
+        mrdHead.acquisitionSystemInformation.institutionName       = 'Virtual'
     try:
         mrdHead.acquisitionSystemInformation.stationName       = dset.StationName
     except:
@@ -192,6 +195,11 @@ def main(args):
 
                 tmpMeta['FlowVelocity']   = float(venc.group(0))
                 tmpMeta['FlowDirDisplay'] = venc_dir_map[dir.group(0)]
+            except:
+                pass
+
+            try:
+                tmpMeta['ImageComments'] = tmpDset.ImageComments
             except:
                 pass
 
