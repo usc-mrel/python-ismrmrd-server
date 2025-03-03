@@ -180,7 +180,7 @@ def process(connection: Connection, config, metadata):
         # So we ask it from the metadata.
         try:
             dt = traj['param']['dt'][0,0][0,0]
-        except:
+        except KeyError:
             dt = 1e-6 # [s]
 
         patient_position = metadata.measurementInformation.patientPosition.value
@@ -202,7 +202,7 @@ def process(connection: Connection, config, metadata):
     # swap 0 and 1 axes to make repetitions the first axis (repetitions, interleaves, 2)
     ktraj = np.swapaxes(ktraj, 0, 1)
 
-    msize = np.int16(10 * traj['param']['fov'][0,0][0,0] / traj['param']['spatial_resolution'][0,0][0,0])
+    msize = np.int16(10 * traj['param']['fov'][0,0][0,0] / traj['param']['spatial_resolution'][0,0][0,0] * cfg['reconstruction']['fov_oversampling'])
 
     ktraj = 0.5 * (ktraj / kmax) * msize
 
