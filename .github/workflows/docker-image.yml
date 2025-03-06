@@ -26,6 +26,16 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
       -
+        name: Build and push devcontainer stage
+        uses: docker/build-push-action@v6
+        with:
+          file: Dockerfile
+          target: python-mrd-devcontainer
+          push: true
+          tags: |
+            kspacekelvin/fire-python-devcon:latest
+            kspacekelvin/fire-python-devcon:${{ github.ref_name }}
+      -
         name: Build and push
         uses: docker/build-push-action@v6
         with:
