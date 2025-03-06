@@ -29,7 +29,7 @@ jobs:
         name: Build and push devcontainer stage
         uses: docker/build-push-action@v6
         with:
-          file: Dockerfile
+          file: docker/Dockerfile
           target: python-mrd-devcontainer
           push: true
           tags: |
