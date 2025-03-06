@@ -125,7 +125,7 @@ def extract_ecg_waveform(wf_list: list, acq_list: list, metadata: ismrmrd.xsd.is
     return ecg_acq_triggers
 
 def process(connection: Connection, config, metadata):
-    logging.disable(logging.CRITICAL)
+    logging.disable(logging.DEBUG)
 
     # Read config file and import BART
     with open('configs/spiral_xdgrasp_config.toml') as jf:
@@ -264,8 +264,8 @@ def process(connection: Connection, config, metadata):
         if wf.getHead().waveform_id == 1025:
             resp_waveform = wf.data[0,:]
             pt_card_triggers = ((wf.data[2,:]-2**31) != 0).astype(int)#np.round(((wf.data[2,:] - 2**31)/2**31)).astype(int)
-            pt_sampling_time = wf.getHead().sample_time_us*1e-6
-            break
+            pt_card_derivative_triggers = ((wf.data[4,:]-2**31) != 0).astype(int)#np.round(((wf.data[2,:] - 2**31)/2**31)).astype(int)
+            pt_sampling_time = wf.getHead().sample_time_us*1e-6 # [us] -> [s]
 
     # time_pt = np.arange(resp_waveform.shape[0])*resp_sampling_time
     if trigger_source == 'ecg':
@@ -274,6 +274,12 @@ def process(connection: Connection, config, metadata):
         roll_amount = int(ecg_pt_delay//pt_sampling_time)
         cardiac_triggers = np.roll(pt_card_triggers, -roll_amount)
         cardiac_triggers[-roll_amount:] = 0
+    elif trigger_source == 'pilottone_derivative':
+        roll_amount = int(ecg_pt_delay//pt_sampling_time)
+        cardiac_triggers = np.roll(pt_card_derivative_triggers, -roll_amount)
+        cardiac_triggers[-roll_amount:] = 0
+    else:
+        raise ValueError(f"Unknown trigger source: {trigger_source}")
 
     resp_bins = generate_cyclic_respiratory_bins(resp_waveform, n_resp_bins, resp_discard=resp_discard)
     cardiac_bins = generate_cardiac_bins(cardiac_triggers, n_cardiac_bins)
@@ -402,10 +408,11 @@ def process(connection: Connection, config, metadata):
 
     # img = np.reshape(np.squeeze(img), (msize, msize, -1))
     img = np.squeeze(img)
+    imgint16 = normalize_convert_toint16(img, metadata)
     connection.send_logging(constants.MRD_LOGGING_INFO, 'Reconstruction is finished. Sending images...')
     for ri in range(n_resp_bins):
         for ci in range(n_cardiac_bins):
-            image = process_group(grp, img[None,:,:,ri,ci], ri, ci, [], metadata)
+            image = process_group(grp, imgint16[None,:,:,ri,ci], ri, ci, metadata)
             connection.send_image(image)
 
     # Send waveforms back to save them with images
@@ -415,15 +422,9 @@ def process(connection: Connection, config, metadata):
     connection.send_close()
     os.environ.pop('CUDA_VISIBLE_DEVICES', None)
 
-
-
-def process_group(group, data, resp_i, card_i, config, metadata):
-   
-
-    data = np.abs(np.flip(data, axis=(1,)))
-    data = np.transpose(data, (0, 2, 1))
-
-    # Determine max value (12 or 16 bit)
+def normalize_convert_toint16(data: np.array, metadata: ismrmrd.xsd.ismrmrdHeader) -> np.array:
+    data = np.abs(data)
+    
     BitsStored = 12
     if (mrdhelper.get_userParameterLong_value(metadata, "BitsStored") is not None):
         BitsStored = mrdhelper.get_userParameterLong_value(metadata, "BitsStored")
@@ -433,6 +434,23 @@ def process_group(group, data, resp_i, card_i, config, metadata):
     data *= maxVal/data.max()
     data = np.around(data)
     data = data.astype(np.int16)
+    return data
+
+def process_group(group, data, resp_i, card_i, metadata):
+
+    data = np.flip(data, axis=(1,))
+    data = np.transpose(data, (0, 2, 1))
+
+    # Determine max value (12 or 16 bit)
+    BitsStored = 12
+    if (mrdhelper.get_userParameterLong_value(metadata, "BitsStored") is not None):
+        BitsStored = mrdhelper.get_userParameterLong_value(metadata, "BitsStored")
+    maxVal = 2**BitsStored - 1
+
+    # # Normalize and convert to int16
+    # data *= maxVal/data.max()
+    # data = np.around(data)
+    # data = data.astype(np.int16)
 
 
     # Format as ISMRMRD image data
