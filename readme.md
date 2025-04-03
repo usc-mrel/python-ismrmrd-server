@@ -7,14 +7,13 @@
 		* 1.2.2. [Adding an image processing filter](#Addinganimageprocessingfilter)
 	* 1.3. [Using raw data from an MRI scanner](#UsingrawdatafromanMRIscanner)
 	* 1.4. [Using DICOM images as input data](#UsingDICOMimagesasinputdata)
-2. [Spiral Reconstruction](#SpiralReconstruction)
-     * 2.1 [Spiral View-Sharing Reconstruction](#SpiralVS)
-     * 2.2 [Spiral Temporal Finite Difference (TFD) Reconstruction](#SpiralTFD)
-     * 2.3 [Spiral Dual Temporally Constrained Reconstruction](#SpiralXDGRASP)
-3. [Setting up a working environment for the Python MRD client/server](#SettingupaworkingenvironmentforthePythonMRDclientserver)
-    * 3.1. [Setting up a devcontainer environment](#Settingupadevcontainerenvironment)
-	* 3.2. [Setting up a conda environment](#Settingupacondaenvironment)
-	* 3.3. [Setting up a Docker environment](#SettingupaDockerenvironment)
+2. [Setting up a working environment for the Python MRD client/server](#SettingupaworkingenvironmentforthePythonMRDclientserver)
+	* 2.1. [Setting up a devcontainer environment](#Settingupadevcontainerenvironment)
+	* 2.2. [Setting up a conda environment](#Settingupacondaenvironment)
+3. [Spiral Reconstruction](#SpiralReconstruction)
+     * 3.1 [Spiral View-Sharing Reconstruction](#SpiralVS)
+     * 3.2 [Spiral Temporal Finite Difference (TFD) Reconstruction](#SpiralTFD)
+     * 3.3 [Spiral Dual Temporally Constrained Reconstruction](#SpiralXDGRASP)
 4. [Code design](#Codedesign)
 5. [Saving incoming data](#Savingincomingdata)
 6. [Startup scripts](#Startupscripts)
@@ -93,7 +92,7 @@ In this example, a Hanning filter is applied to raw k-space data.
 
 1. The NumPy library contains a [Hanning filter](https://numpy.org/doc/stable/reference/generated/numpy.hanning.html) that can be applied to k-space data before the Fourier transform.
 
-1. In the ``process_raw()`` function the ``filterkspace.py`` file, find the [section where raw k-space data is already sorted into a Cartesian grid, just prior to Fourier transform](https://github.com/kspaceKelvin/python-ismrmrd-server/blob/27454bd9f1a2c7fd3928bfa0767840b0d015d988/invertcontrast.py#L177).  Add a Hanning filter and perform element-wise multiplication of the k-space data with the filter:
+1. In the ``process_raw()`` function the ``filterkspace.py`` file, find the [section where raw k-space data is already sorted into a Cartesian grid, just prior to Fourier transform](https://github.com/usc-mrel/python-ismrmrd-server/blob/27454bd9f1a2c7fd3928bfa0767840b0d015d988/invertcontrast.py#L177).  Add a Hanning filter and perform element-wise multiplication of the k-space data with the filter:
 
     **Old code:**
     ```
@@ -118,7 +117,7 @@ In this example, a Hanning filter is applied to raw k-space data.
     data = fft.ifftshift(data, axes=(1, 2))
     ```
 
-1. The module used by the server is specified by the ``config`` option on the client side.  The Server class used in this code [attempts to find](https://github.com/kspaceKelvin/python-ismrmrd-server/blob/6684b4d17c0591e64b34bc06fdd06d78a2d8c659/server.py#L105) a Python module matching the name of the config file if it doesn't match one of the default examples.  [Start the server](https://github.com/kspaceKelvin/python-ismrmrd-server#ReconstructaphantomrawdatasetusingtheMRDclientserverpair) and in a separate window, run the client with the ``-c filterkspace`` option to specify the new config:
+1. The module used by the server is specified by the ``config`` option on the client side.  The Server class used in this code [attempts to find](https://github.com/usc-mrel/python-ismrmrd-server/blob/6684b4d17c0591e64b34bc06fdd06d78a2d8c659/server.py#L105) a Python module matching the name of the config file if it doesn't match one of the default examples.  [Start the server](https://github.com/usc-mrel/python-ismrmrd-server#ReconstructaphantomrawdatasetusingtheMRDclientserverpair) and in a separate window, run the client with the ``-c filterkspace`` option to specify the new config:
     ```
     python client.py -c filterkspace -o phantom_img.h5 phantom_raw.h5
     ```
@@ -138,7 +137,7 @@ In this example, a high-pass filter is applied to images.
     from PIL import Image, ImageFilter
     ```
 
-1. In the ``process_image()`` function the ``filterimage.py`` file, find the sections where the incoming images are being [normalized](https://github.com/kspaceKelvin/python-ismrmrd-server/blob/6684b4d17c0591e64b34bc06fdd06d78a2d8c659/invertcontrast.py#L261) and [filtered](https://github.com/kspaceKelvin/python-ismrmrd-server/blob/6684b4d17c0591e64b34bc06fdd06d78a2d8c659/invertcontrast.py#L267). The Pillow image filters require images with values in the range 0-255, so replace these two sections as follows:
+1. In the ``process_image()`` function the ``filterimage.py`` file, find the sections where the incoming images are being [normalized](https://github.com/usc-mrel/python-ismrmrd-server/blob/6684b4d17c0591e64b34bc06fdd06d78a2d8c659/invertcontrast.py#L261) and [filtered](https://github.com/usc-mrel/python-ismrmrd-server/blob/6684b4d17c0591e64b34bc06fdd06d78a2d8c659/invertcontrast.py#L267). The Pillow image filters require images with values in the range 0-255, so replace these two sections as follows:
 
     **Old code:**
     ```
@@ -175,7 +174,7 @@ In this example, a high-pass filter is applied to images.
     np.save(debugFolder + "/" + "imgFiltered.npy", data)
     ```
 
-1. The module used by the server is specified by the ``config`` option on the client side.  The Server class used in this code [attempts to find](https://github.com/kspaceKelvin/python-ismrmrd-server/blob/6684b4d17c0591e64b34bc06fdd06d78a2d8c659/server.py#L105) a Python module matching the name of the config file if it doesn't match one of the default examples.  [Start the server](https://github.com/kspaceKelvin/python-ismrmrd-server#ReconstructaphantomrawdatasetusingtheMRDclientserverpair) and in a separate window, run the client with the ``-c filterimage`` option to specify the new config:
+1. The module used by the server is specified by the ``config`` option on the client side.  The Server class used in this code [attempts to find](https://github.com/usc-mrel/python-ismrmrd-server/blob/6684b4d17c0591e64b34bc06fdd06d78a2d8c659/server.py#L105) a Python module matching the name of the config file if it doesn't match one of the default examples.  [Start the server](https://github.com/usc-mrel/python-ismrmrd-server#ReconstructaphantomrawdatasetusingtheMRDclientserverpair) and in a separate window, run the client with the ``-c filterimage`` option to specify the new config:
     ```
     python client.py -c filterimage -o phantom_img.h5 phantom_raw.h5
     ```
@@ -203,7 +202,7 @@ For Siemens data, raw data in .dat format can be converted and processed as foll
 
     If the input file is a multi-RAID file, then several output files are created such as ``gre_raw_1.h5`` and ``gre_raw_2.h5``.  The first measurements are dependency data while the main acquisition is in the last numbered file.
 
-1. [Start the server](https://github.com/kspaceKelvin/python-ismrmrd-server#ReconstructaphantomrawdatasetusingtheMRDclientserverpair) and in a separate window, run the client using the converted file:
+1. [Start the server](https://github.com/usc-mrel/python-ismrmrd-server#ReconstructaphantomrawdatasetusingtheMRDclientserverpair) and in a separate window, run the client using the converted file:
     ```
     python client.py -c invertcontrast -o gre_img.h5 gre_raw_2.h5
     ```
@@ -221,7 +220,7 @@ For image processing workflows, DICOM images can be used as input by converting 
     ```
     Where the DICOM files are in a folder called ``dicoms`` and an output file ``dicom_img.h5`` is created containing the MRD formatted images.
 
-1. [Start the server](https://github.com/kspaceKelvin/python-ismrmrd-server#ReconstructaphantomrawdatasetusingtheMRDclientserverpair) and in a separate window, run the client using the converted file:
+1. [Start the server](https://github.com/usc-mrel/python-ismrmrd-server#ReconstructaphantomrawdatasetusingtheMRDclientserverpair) and in a separate window, run the client using the converted file:
     ```
     python client.py -c invertcontrast -o dicom_img_inverted.h5 dicom_img.h5
     ```
@@ -246,7 +245,7 @@ Conda is a Python environment manager that is useful for creating and maintainin
 
 1. Clone (download) this repository
     ```
-    git clone https://github.com/kspaceKelvin/python-ismrmrd-server.git
+    git clone https://github.com/usc-mrel/python-ismrmrd-server.git
     ```
 
 1. Change into this respository's directory and create a new conda environment for MRD using the dependencies listed in [environment.yml](environment.yml).  If using Windows, then [environment_windows.yml](environment_windows.yml) should be used instead.
@@ -267,73 +266,6 @@ Conda is a Python environment manager that is useful for creating and maintainin
 
 To use this environment in the future, open a command prompt and run ``micromamba activate mrd``.
 
-###  2.3. <a name='SettingupaDockerenvironment'></a>Setting up a Docker environment
-[Docker](https://www.docker.com/products/docker-desktop) is a virtualization platform that allows software to run in isolated environments called containers.  It provides a convenient mechanism to package up a reconstruction program and all its libraries in a manner that can be easily deployed to other computers without manually installing dependencies or other configuration steps.  
-
-A complete working environment of this respository has been compiled into a Docker image stored on [Docker Hub](https://hub.docker.com/r/kspacekelvin/fire-python).  This can be used to quickly get started, but [setting up a native Python environment](#SetupaDockerEnvironment) is recommended for development work.
-
-1. Download and install [Docker](https://www.docker.com/products/docker-desktop) with the standard settings.
-
-1. Download the Docker image of this repository by opening a command prompt and running:
-    ```
-    docker pull kspacekelvin/fire-python
-    ```
-
-1. <a name='Dockerserver'></a>The Python MRD server can be started in a Docker container by running:
-    ```
-    In Windows:
-        docker run -p=9002:9002 --rm -it -v C:\tmp:/tmp kspacekelvin/fire-python
-
-    In MacOS/Linux:
-        docker run -p=9002:9002 --rm -it -v /tmp:/tmp kspacekelvin/fire-python
-    ```
-
-    The command line options used are:
-    ```
-    -p=9002:9002      Allows access to port 9002 inside the container from port 9002 on the host.  
-                      Change the first number to change the host port.
-    -it               Enables "interactive" mode with a pseudo-tty.  This is necessary for "ctrl-c" to
-                      stop the program.
-    --rm              Remove the container after it is stopped
-    -v C:\tmp:/tmp    Maps the C:\tmp folder on the host to /tmp inside the container.
-                      Change the first path if using a different folder on the host computer.
-                      Log and debug files are stored in this folder.
-    ```
-
-    The server can be stopped by pressing ``ctrl-c``.
-
-1. <a name='Dockerclient'></a>The Python MRD client can also be run in a Docker container (the internal IP address `host.docker.internal` needs to be manually added to the host in the latest version of Docker). If the server is running in a Docker container already, open a new command prompt and run:
-    
-    In Windows:
-    ```
-    docker run --rm -it --add-host=host.docker.internal:host-gateway -v C:\tmp:/tmp kspacekelvin/fire-python /bin/bash
-    ```
-
-    In MacOS/Linux:
-    ```
-    docker run --rm -it --add-host=host.docker.internal:host-gateway -v /tmp:/tmp kspacekelvin/fire-python /bin/bash
-    ```
-
-    In this invocation, the ``/bin/bash`` argument is used to start the container with a bash shell prompt instead of starting the Python MRD server.  The client can be called by running:
-    ```
-    python /opt/code/python-ismrmrd-server/client.py -a host.docker.internal -p 9002 -o /tmp/phantom_img.h5 /tmp/phantom_raw.h5
-    ```
-
-    The command line options used are:
-    ```
-    -a host.docker.internal  Send data to address host.docker.internal, which
-                             resolves to the IP address of the Docker host.
-    -p 9002                  Send data to port 9002.  This is sent to the host, which
-                             is then redirected to the server container due to the
-                             "-p" port mapping when starting the server. 
-    -o                       Specifies the output file name
-    -G                       Specifies the group name in the output file
-    ```
-
-    This Docker container can also be used to run the ``generate_cartesian_shepp_logan_dataset.py`` script to generate phantom data:
-    ```
-        python /opt/code/python-ismrmrd-server/generate_cartesian_shepp_logan_dataset.py -o /tmp/phantom_raw.h5
-	```
 ##  3. <a name='SpiralReconstruction'></a>Spiral Reconstruction
 
 Spiral reconstruction can reconstruct 2D spiral sequences generated by [RTSpiral PyPulseq](https://github.com/usc-mrel/rtspiral_pypulseq). All three reconstructions have the following prerequisites:
