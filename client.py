@@ -13,19 +13,21 @@ import multiprocessing
 from connection import Connection
 import time
 import os
+import json
 
 defaults = {
-    'filename':       '',
-    'in_group':       '',
-    'address':        'localhost',
-    'port':           9002, 
-    'outfile':        'out.h5',
-    'out_group':      str(datetime.datetime.now()),
-    'config':         'invertcontrast',
-    'config_local':   '',
-    'send_waveforms': False,
-    'verbose':        False,
-    'logfile':        ''
+    'filename':           '',
+    'in_group':           '',
+    'address':            'localhost',
+    'port':               9002, 
+    'outfile':            'out.h5',
+    'out_group':          str(datetime.datetime.now()),
+    'config':             'invertcontrast',
+    'config_local':       '',
+    'ignore_json_config': False,
+    'send_waveforms':     False,
+    'verbose':            False,
+    'logfile':            ''
 }
 
 def connection_receive_loop(sock, outfile, outgroup, verbose, logfile, recvAcqs, recvImages, recvWaveforms):
@@ -205,6 +207,22 @@ def main(args):
         if ('configAdditional' in groups):
             configAdditionalText = dset._dataset['configAdditional'][0]
             configAdditionalText = configAdditionalText.decode("utf-8")
+
+            if args.ignore_json_config:
+                # Remove the config specified in the JSON, allowing the config passed via command line to the client to be used
+                configAdditional = json.loads(configAdditionalText)
+                if ('parameters' in configAdditional):
+                    if ('config' in configAdditional['parameters']):
+                        logging.warning(f"Input file contains JSON configAdditional that specifies config '{configAdditional['parameters']['config']}', but will be ignored because '--ignore-json-config' was specified!")
+                        del configAdditional['parameters']['config']
+
+                    if ('customconfig' in configAdditional['parameters']):
+                        if configAdditional['parameters']['customconfig'] != '':
+                            logging.warning(f"Input file contains JSON configAdditional that specifies customconfig '{configAdditional['parameters']['customconfig']}', but will be ignored because '--ignore-json-config' was specified!")
+                        del configAdditional['parameters']['customconfig']
+
+                    configAdditionalText = json.dumps(configAdditional, indent=2)
+
             logging.info("Sending configAdditional found in file %s:\n%s", args.filename, configAdditionalText)
             connection.send_text(configAdditionalText)
         else:
@@ -213,6 +231,22 @@ def main(args):
     else:
         if ('configAdditional' in groups):
             logging.warning("configAdditional found in file %s, but is overriden by local file %s!", args.filename, configAdditionalFile)
+
+        if args.ignore_json_config:
+            # Remove the config specified in the JSON, allowing the config passed via command line to the client to be used
+            localConfigAdditional = json.loads(localConfigAdditionalText)
+            if ('parameters' in localConfigAdditional):
+                if ('config' in localConfigAdditional['parameters']):
+                    logging.warning(f"configAdditional file '{configAdditionalFile}' specifies config '{localConfigAdditional['parameters']['config']}', but will be ignored because '--ignore-json-config' was specified!")
+                    del localConfigAdditional['parameters']['config']
+
+                if ('customconfig' in localConfigAdditional['parameters']):
+                    if localConfigAdditional['parameters']['customconfig'] != '':
+                        logging.warning(f"configAdditional file '{configAdditionalFile}' specifies customconfig '{localConfigAdditional['parameters']['customconfig']}', but will be ignored because '--ignore-json-config' was specified!")
+                    del localConfigAdditional['parameters']['customconfig']
+
+                localConfigAdditionalText = json.dumps(localConfigAdditional, indent=2)
+
         logging.info("Sending configAdditional found in file %s:\n%s", configAdditionalFile, localConfigAdditionalText)
         connection.send_text(localConfigAdditionalText)
 
@@ -296,17 +330,18 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description='Example client for MRD streaming format',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument('filename',                                    help='Input file')
-    parser.add_argument('-a', '--address',                             help='Address (hostname) of MRD server')
-    parser.add_argument('-p', '--port',           type=int,            help='Port')
-    parser.add_argument('-o', '--outfile',                             help='Output file')
-    parser.add_argument('-g', '--in-group',                            help='Input data group')
-    parser.add_argument('-G', '--out-group',                           help='Output group name')
-    parser.add_argument('-c', '--config',                              help='Remote configuration file')
-    parser.add_argument('-C', '--config-local',                        help='Local configuration file')
-    parser.add_argument('-w', '--send-waveforms', action='store_true', help='Send waveform (physio) data')
-    parser.add_argument('-v', '--verbose',        action='store_true', help='Verbose mode')
-    parser.add_argument('-l', '--logfile',                  type=str,  help='Path to log file')
+    parser.add_argument('filename',                                        help='Input file')
+    parser.add_argument('-a', '--address',                                 help='Address (hostname) of MRD server')
+    parser.add_argument('-p', '--port',               type=int,            help='Port')
+    parser.add_argument('-o', '--outfile',                                 help='Output file')
+    parser.add_argument('-g', '--in-group',                                help='Input data group')
+    parser.add_argument('-G', '--out-group',                               help='Output group name')
+    parser.add_argument('-c', '--config',                                  help='Remote configuration file')
+    parser.add_argument('-C', '--config-local',                            help='Local configuration file')
+    parser.add_argument('-w', '--send-waveforms',     action='store_true', help='Send waveform (physio) data')
+    parser.add_argument('-v', '--verbose',            action='store_true', help='Verbose mode')
+    parser.add_argument('-l', '--logfile',                      type=str,  help='Path to log file')
+    parser.add_argument(      '--ignore-json-config', action='store_true', help='Ignore config specified in JSON')
 
     parser.set_defaults(**defaults)
 
@@ -324,5 +359,9 @@ if __name__ == '__main__':
         logging.root.setLevel(logging.DEBUG)
     else:
         logging.root.setLevel(logging.INFO)
+
+    # If a config is specified via the command line arguments, then set ignore_json_config to True
+    if ('-c' in sys.argv) or ('--config' in sys.argv):
+        args.ignore_json_config = True
 
     main(args)
