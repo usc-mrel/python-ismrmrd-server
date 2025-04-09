@@ -261,6 +261,13 @@ Conda is a Python environment manager that is useful for creating and maintainin
     pip install ismrmrd
     ```
 
+1. The [ismrmrd-python-tools](https://github.com/ismrmrd/ismrmrd-python-tools) contain useful libraries for simulations, including generation of simulated raw k-space data used by [generate_cartesian_shepp_logan_dataset](./generate_cartesian_shepp_logan_dataset.py).  Install it by cloning the repository and using `pip install .` (note the trailing `.`) in the folder.
+    ```
+    git clone https://github.com/ismrmrd/ismrmrd-python-tools.git
+    cd ismrmrd-python-tools
+    pip3 install .
+    ```
+
 To use this environment in the future, open a command prompt and run ``micromamba activate mrd``.
 
 ###  2.3. <a name='SettingupaDockerenvironment'></a>Setting up a Docker environment

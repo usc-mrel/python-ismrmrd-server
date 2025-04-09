@@ -76,7 +76,7 @@ A [Dockerfile](../docker/Dockerfile) is provided using based on [python:3.12.0-s
 
 For some image analysis code, additional packages or libraries may be required.  To create a Docker image with these additional packages, start with the ``kspacekelvin/fire-python`` image (created above) and add ``RUN`` commands corresponding to how the packages would be installed via command line.  Temporary files created during each ``RUN`` command are kept in the final image, so group installations of multiple packages from the same manager (e.g. apt or pip) whenever possible.  An example for installation of PyTorch is provided in [docker/pytorch/Dockerfile](../docker/pytorch/Dockerfile).  Alternatively, it is possible to copy the main [Dockerfile](../docker/Dockerfile) and modify it directly.  An example for this approach can be found in [docker/pytorch/Dockerfile_standalone](../docker/pytorch/Dockerfile_standalone).
 
-When determining the required packages, an interactive approach is often useful.  Build the existing Dockerfile by opening a command prompt in the folder containing the python-ismrmrd-server repo:
+When determining the required packages, an interactive approach is often useful.  Build the existing Dockerfile by opening a command prompt in the `python-ismrmrd-server` repo folder and run:
 ```
 docker build --no-cache -t fire-python -f docker/Dockerfile ./
 ```
@@ -106,14 +106,13 @@ Within this container, attempt to start the Python server by running ``python3 /
 A chroot image contains the complete contents of a Linux operating system and serves as the root folder for the reconstruction program.  The chroot image can contain libraries and other files that can be used by the reconstruction program, isolated from the Linux operating system on the MARS computer.  Operating systems tested for FIRE chroot compatibility include Ubuntu, Debian, and Alpine.  Chroot images can be generated using manual tools such as debootstrap or be created from existing containers such as Docker.
 
 A set of scripts is provided to automate the creation of chroot images from Docker images.  To use them, open a command prompt inside the [docker](/docker) folder and run the following command:
+```
+In Windows:
+    docker_to_chroot.bat kspacekelvin/fire-python fire-python-chroot.img
 
-    ```
-    In Windows:
-        docker_to_chroot.bat kspacekelvin/fire-python fire-python-chroot.img
-
-    In MacOS/Linux:
-        ./docker_to_chroot.sh kspacekelvin/fire-python fire-python-chroot.img
-    ```
+In MacOS/Linux:
+    ./docker_to_chroot.sh kspacekelvin/fire-python fire-python-chroot.img
+```
 
 The first argument is the name of the (existing) Docker image and the second argument is the chroot image file to be created.  An optional third argument can be used to specify the free space buffer added to the chroot in MB (default 50 MB).  Note that both the [docker_to_chroot.bat](/docker/docker_to_chroot.bat) and [docker_to_chroot.sh](/docker/docker_to_chroot.sh) scripts require the [docker_tar_to_chroot.sh](/docker/docker_tar_to_chroot.sh) script that is also in the docker folder.
 
