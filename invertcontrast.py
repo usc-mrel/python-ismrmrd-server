@@ -411,6 +411,28 @@ def process_image(imgGroup, connection, config, mrdHeader):
 
         imagesOut[iImg].attribute_string = metaXml
 
+    # Send a copy of original (unmodified) images back too
+    if mrdhelper.get_json_config_param(config, 'sendOriginal', default=False, type='bool') == True:
+        stack = traceback.extract_stack()
+        if stack[-2].name == 'process_raw':
+            logging.warning('sendOriginal is true, but input was raw data, so no original images to return!')
+        else:
+            logging.info('Sending a copy of original unmodified images due to sendOriginal set to True')
+            # In reverse order so that they'll be in correct order as we insert them to the front of the list
+            for image in reversed(imgGroup):
+                # Create a copy to not modify the original inputs
+                tmpImg = image
+
+                # Change the series_index to have a different series
+                tmpImg.image_series_index = 99
+
+                # Ensure Keep_image_geometry is set to not reverse image orientation
+                tmpMeta = ismrmrd.Meta.deserialize(tmpImg.attribute_string)
+                tmpMeta['Keep_image_geometry'] = 1
+                tmpImg.attribute_string = tmpMeta.serialize()
+
+                imagesOut.insert(0, tmpImg)
+
     return imagesOut
 
 # Create an example ROI <3
