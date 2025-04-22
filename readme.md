@@ -365,8 +365,6 @@ There are several example "modules" that can be selected by specifying their nam
 
 - [simplefft.py](simplefft.py): This module contains code for performing a rudimentary image reconstruction from raw data, consisting of a Fourier transform, sum-of-squares coil combination, signal intensity normalization, and removal of phase oversampling.
 
-- [rgb.py](rgb.py): This module accepts incoming image data, applies a jet colormap, and sends RGB images back to the client.
-
 - [analyzeflow.py](analyzeflow.py): This module accepts velocity phase contrast image data and performs basic masking.
 
 - [report.py](report.py): This module provides an example of generating report from a dictionary of parameters (keys) and their corresponding values.  An image with a text table is returned to the client and values are stored in the MetaAttributes to allow for batch scripted parsing.

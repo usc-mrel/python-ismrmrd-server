@@ -5,6 +5,7 @@ import logging
 import traceback
 import numpy as np
 import numpy.fft as fft
+import matplotlib.pyplot as plt
 import xml.dom.minidom
 import base64
 import ctypes
@@ -298,6 +299,32 @@ def process_image(images, connection, config, metadata):
     data = np.abs(data)
     np.save(debugFolder + "/" + "imgInverted.npy", data)
 
+    if ('parameters' in config) and ('options' in config['parameters']) and (config['parameters']['options'] == 'rgb'):
+        logging.info('Converting data into RGB')
+        if data.shape[3] != 1:
+            logging.error("Multi-channel data is not supported")
+            return []
+        
+        # Normalize to (0.0, 1.0) as expected by get_cmap()
+        data = data.astype(np.float32)
+        data -= data.min()
+        data *= 1/data.max()
+
+        # Apply colormap
+        cmap = plt.get_cmap('jet')
+        rgb = cmap(data)
+
+        # Remove alpha channel
+        # Resulting shape is [row col z rgb img]
+        rgb = rgb[...,0:-1]
+        rgb = rgb.transpose((0, 1, 2, 5, 4, 3))
+        rgb = np.squeeze(rgb, 5)
+
+        # MRD RGB images must be uint16 in range (0, 255)
+        rgb *= 255
+        data = rgb.astype(np.uint16)
+        np.save(debugFolder + "/" + "imgRGB.npy", data)
+
     currentSeries = 0
 
     # Re-slice back into 2D images
@@ -317,6 +344,11 @@ def process_image(images, connection, config, metadata):
         # Set the image_type to match the data_type for complex data
         if (imagesOut[iImg].data_type == ismrmrd.DATATYPE_CXFLOAT) or (imagesOut[iImg].data_type == ismrmrd.DATATYPE_CXDOUBLE):
             oldHeader.image_type = ismrmrd.IMTYPE_COMPLEX
+
+        if ('parameters' in config) and ('options' in config['parameters']) and (config['parameters']['options'] == 'rgb'):
+            # Set RGB parameters
+            oldHeader.image_type = 6  # To be defined as ismrmrd.IMTYPE_RGB
+            oldHeader.channels   = 3  # RGB "channels".  This is set by from_array, but need to be explicit as we're copying the old header instead
 
         # Unused example, as images are grouped by series before being passed into this function now
         # oldHeader.image_series_index = currentSeries
@@ -346,6 +378,18 @@ def process_image(images, connection, config, metadata):
             # Example for setting colormap
             if config['parameters']['options'] == 'colormap':
                 tmpMeta['LUTFileName'] = 'MicroDeltaHotMetal.pal'
+
+            # Example for setting RGB
+            if config['parameters']['options'] == 'rgb':
+                tmpMeta['SequenceDescriptionAdditional']  = 'FIRE_RGB'
+                tmpMeta['ImageProcessingHistory'].append('RGB')
+
+                # RGB images have no windowing
+                del tmpMeta['WindowCenter']
+                del tmpMeta['WindowWidth']
+
+                # RGB images shouldn't undergo further processing, e.g. orientation or distortion correction
+                tmpMeta['InternalSend'] = 1
 
         # Add image orientation directions to MetaAttributes if not already present
         if tmpMeta.get('ImageRowDir') is None:
