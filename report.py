@@ -17,28 +17,28 @@ import matplotlib.pyplot as plt
 # Folder for debug output files
 debugFolder = "/tmp/share/debug"
 
-def process(connection, config, metadata):
+def process(connection, config, mrdHeader):
     logging.info("Config: \n%s", config)
 
-    # Metadata should be MRD formatted header, but may be a string
+    # mrdHeader should be xml formatted MRD header, but may be a string
     # if it failed conversion earlier
     try:
         # Disabled due to incompatibility between PyXB and Python 3.8:
         # https://github.com/pabigot/pyxb/issues/123
-        # # logging.info("Metadata: \n%s", metadata.toxml('utf-8'))
+        # # logging.info("MRD header: \n%s", mrdHeader.toxml('utf-8'))
 
-        logging.info("Incoming dataset contains %d encodings", len(metadata.encoding))
+        logging.info("Incoming dataset contains %d encodings", len(mrdHeader.encoding))
         logging.info("First encoding is of type '%s', with a matrix size of (%s x %s x %s) and a field of view of (%s x %s x %s)mm^3", 
-            metadata.encoding[0].trajectory, 
-            metadata.encoding[0].encodedSpace.matrixSize.x, 
-            metadata.encoding[0].encodedSpace.matrixSize.y, 
-            metadata.encoding[0].encodedSpace.matrixSize.z, 
-            metadata.encoding[0].encodedSpace.fieldOfView_mm.x, 
-            metadata.encoding[0].encodedSpace.fieldOfView_mm.y, 
-            metadata.encoding[0].encodedSpace.fieldOfView_mm.z)
+            mrdHeader.encoding[0].trajectory, 
+            mrdHeader.encoding[0].encodedSpace.matrixSize.x, 
+            mrdHeader.encoding[0].encodedSpace.matrixSize.y, 
+            mrdHeader.encoding[0].encodedSpace.matrixSize.z, 
+            mrdHeader.encoding[0].encodedSpace.fieldOfView_mm.x, 
+            mrdHeader.encoding[0].encodedSpace.fieldOfView_mm.y, 
+            mrdHeader.encoding[0].encodedSpace.fieldOfView_mm.z)
 
     except:
-        logging.info("Improperly formatted metadata: \n%s", metadata)
+        logging.info("Improperly formatted MRD header: \n%s", mrdHeader)
 
     # Continuously parse incoming data parsed from MRD messages
     currentSeries = 0
@@ -62,7 +62,7 @@ def process(connection, config, metadata):
                 # data, which returns images that are sent back to the client.
                 if item.is_flag_set(ismrmrd.ACQ_LAST_IN_SLICE):
                     logging.info("Processing a group of k-space data")
-                    image = process_data(acqGroup, connection, config, metadata)
+                    image = process_data(acqGroup, connection, config, mrdHeader)
                     connection.send_image(image)
                     acqGroup = []
 
@@ -76,7 +76,7 @@ def process(connection, config, metadata):
                 if item.image_series_index != currentSeries:
                     logging.info("Processing a group of images because series index changed to %d", item.image_series_index)
                     currentSeries = item.image_series_index
-                    image = process_data(imgGroup, connection, config, metadata)
+                    image = process_data(imgGroup, connection, config, mrdHeader)
                     connection.send_image(image)
                     imgGroup = []
 
@@ -118,13 +118,13 @@ def process(connection, config, metadata):
         # image in a series is typically not separately flagged.
         if len(acqGroup) > 0:
             logging.info("Processing a group of k-space data (untriggered)")
-            image = process_data(acqGroup, connection, config, metadata)
+            image = process_data(acqGroup, connection, config, mrdHeader)
             connection.send_image(image)
             acqGroup = []
 
         if len(imgGroup) > 0:
             logging.info("Processing a group of images (untriggered)")
-            image = process_data(imgGroup, connection, config, metadata)
+            image = process_data(imgGroup, connection, config, mrdHeader)
             connection.send_image(image)
             imgGroup = []
 
@@ -135,7 +135,7 @@ def process(connection, config, metadata):
     finally:
         connection.send_close()
 
-def process_data(group, connection, config, metadata):
+def process_data(group, connection, config, mrdHeader):
     if len(group) == 0:
         return []
 
@@ -149,10 +149,10 @@ def process_data(group, connection, config, metadata):
 
     # Create a dictionary of values to report
     data = {}
-    data['protocolName'] = metadata.measurementInformation.protocolName
-    data['scanner']      = f'{metadata.acquisitionSystemInformation.systemVendor} {metadata.acquisitionSystemInformation.systemModel} {metadata.acquisitionSystemInformation.systemFieldStrength_T:{".1f" if metadata.acquisitionSystemInformation.systemFieldStrength_T > 1 else ".2f"}}T'
-    data['fieldOfView']  = f'{metadata.encoding[0].encodedSpace.fieldOfView_mm.x:.1f} x {metadata.encoding[0].encodedSpace.fieldOfView_mm.y:.1f} x {metadata.encoding[0].encodedSpace.fieldOfView_mm.z:.1f} mm^3'
-    data['matrixSize']   = f'{metadata.encoding[0].encodedSpace.matrixSize.x} x {metadata.encoding[0].encodedSpace.matrixSize.y} x {metadata.encoding[0].encodedSpace.matrixSize.z}'
+    data['protocolName'] = mrdHeader.measurementInformation.protocolName
+    data['scanner']      = f'{mrdHeader.acquisitionSystemInformation.systemVendor} {mrdHeader.acquisitionSystemInformation.systemModel} {mrdHeader.acquisitionSystemInformation.systemFieldStrength_T:{".1f" if mrdHeader.acquisitionSystemInformation.systemFieldStrength_T > 1 else ".2f"}}T'
+    data['fieldOfView']  = f'{mrdHeader.encoding[0].encodedSpace.fieldOfView_mm.x:.1f} x {mrdHeader.encoding[0].encodedSpace.fieldOfView_mm.y:.1f} x {mrdHeader.encoding[0].encodedSpace.fieldOfView_mm.z:.1f} mm^3'
+    data['matrixSize']   = f'{mrdHeader.encoding[0].encodedSpace.matrixSize.x} x {mrdHeader.encoding[0].encodedSpace.matrixSize.y} x {mrdHeader.encoding[0].encodedSpace.matrixSize.z}'
 
     if isinstance(group[0], ismrmrd.acquisition.Acquisition):
         data['inputData'] = f'{len(group)} readouts'

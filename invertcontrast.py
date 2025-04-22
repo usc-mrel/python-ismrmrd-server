@@ -17,28 +17,28 @@ from time import perf_counter
 # Folder for debug output files
 debugFolder = "/tmp/share/debug"
 
-def process(connection, config, metadata):
+def process(connection, config, mrdHeader):
     logging.info("Config: \n%s", config)
 
-    # Metadata should be MRD formatted header, but may be a string
+    # mrdHeader should be xml formatted MRD header, but may be a string
     # if it failed conversion earlier
     try:
         # Disabled due to incompatibility between PyXB and Python 3.8:
         # https://github.com/pabigot/pyxb/issues/123
-        # # logging.info("Metadata: \n%s", metadata.toxml('utf-8'))
+        # # logging.info("MRD header: \n%s", mrdHeader.toxml('utf-8'))
 
-        logging.info("Incoming dataset contains %d encodings", len(metadata.encoding))
+        logging.info("Incoming dataset contains %d encodings", len(mrdHeader.encoding))
         logging.info("First encoding is of type '%s', with a matrix size of (%s x %s x %s) and a field of view of (%s x %s x %s)mm^3", 
-            metadata.encoding[0].trajectory, 
-            metadata.encoding[0].encodedSpace.matrixSize.x, 
-            metadata.encoding[0].encodedSpace.matrixSize.y, 
-            metadata.encoding[0].encodedSpace.matrixSize.z, 
-            metadata.encoding[0].encodedSpace.fieldOfView_mm.x, 
-            metadata.encoding[0].encodedSpace.fieldOfView_mm.y, 
-            metadata.encoding[0].encodedSpace.fieldOfView_mm.z)
+            mrdHeader.encoding[0].trajectory, 
+            mrdHeader.encoding[0].encodedSpace.matrixSize.x, 
+            mrdHeader.encoding[0].encodedSpace.matrixSize.y, 
+            mrdHeader.encoding[0].encodedSpace.matrixSize.z, 
+            mrdHeader.encoding[0].encodedSpace.fieldOfView_mm.x, 
+            mrdHeader.encoding[0].encodedSpace.fieldOfView_mm.y, 
+            mrdHeader.encoding[0].encodedSpace.fieldOfView_mm.z)
 
     except:
-        logging.info("Improperly formatted metadata: \n%s", metadata)
+        logging.info("Improperly formatted MRD header: \n%s", mrdHeader)
 
     # Continuously parse incoming data parsed from MRD messages
     currentSeries = 0
@@ -62,7 +62,7 @@ def process(connection, config, metadata):
                 # data, which returns images that are sent back to the client.
                 if item.is_flag_set(ismrmrd.ACQ_LAST_IN_SLICE):
                     logging.info("Processing a group of k-space data")
-                    image = process_raw(acqGroup, connection, config, metadata)
+                    image = process_raw(acqGroup, connection, config, mrdHeader)
                     connection.send_image(image)
                     acqGroup = []
 
@@ -76,7 +76,7 @@ def process(connection, config, metadata):
                 if item.image_series_index != currentSeries:
                     logging.info("Processing a group of images because series index changed to %d", item.image_series_index)
                     currentSeries = item.image_series_index
-                    image = process_image(imgGroup, connection, config, metadata)
+                    image = process_image(imgGroup, connection, config, mrdHeader)
                     connection.send_image(image)
                     imgGroup = []
 
@@ -118,13 +118,13 @@ def process(connection, config, metadata):
         # image in a series is typically not separately flagged.
         if len(acqGroup) > 0:
             logging.info("Processing a group of k-space data (untriggered)")
-            image = process_raw(acqGroup, connection, config, metadata)
+            image = process_raw(acqGroup, connection, config, mrdHeader)
             connection.send_image(image)
             acqGroup = []
 
         if len(imgGroup) > 0:
             logging.info("Processing a group of images (untriggered)")
-            image = process_image(imgGroup, connection, config, metadata)
+            image = process_image(imgGroup, connection, config, mrdHeader)
             connection.send_image(image)
             imgGroup = []
 
@@ -136,9 +136,13 @@ def process(connection, config, metadata):
         connection.send_close()
 
 
-def process_raw(group, connection, config, metadata):
-    if len(group) == 0:
+def process_raw(acqGroup, connection, config, mrdHeader):
+    if len(acqGroup) == 0:
         return []
+    
+    logging.info(f'-----------------------------------------------')
+    logging.info(f'     process_raw called with {len(acqGroup)} readouts')
+    logging.info(f'-----------------------------------------------')
 
     # Start timer
     tic = perf_counter()
@@ -149,19 +153,19 @@ def process_raw(group, connection, config, metadata):
         logging.debug("Created folder " + debugFolder + " for debug output files")
 
     # Format data into single [cha PE RO phs] array
-    lin = [acquisition.idx.kspace_encode_step_1 for acquisition in group]
-    phs = [acquisition.idx.phase                for acquisition in group]
+    lin = [acquisition.idx.kspace_encode_step_1 for acquisition in acqGroup]
+    phs = [acquisition.idx.phase                for acquisition in acqGroup]
 
     # Use the zero-padded matrix size
-    data = np.zeros((group[0].data.shape[0], 
-                     metadata.encoding[0].encodedSpace.matrixSize.y, 
-                     metadata.encoding[0].encodedSpace.matrixSize.x, 
+    data = np.zeros((acqGroup[0].data.shape[0], 
+                     mrdHeader.encoding[0].encodedSpace.matrixSize.y, 
+                     mrdHeader.encoding[0].encodedSpace.matrixSize.x, 
                      max(phs)+1), 
-                    group[0].data.dtype)
+                    acqGroup[0].data.dtype)
 
     rawHead = [None]*(max(phs)+1)
 
-    for acq, lin, phs in zip(group, lin, phs):
+    for acq, lin, phs in zip(acqGroup, lin, phs):
         if (lin < data.shape[1]) and (phs < data.shape[3]):
             # TODO: Account for asymmetric echo in a better way
             data[:,lin,-acq.data.shape[1]:,phs] = acq.data
@@ -193,14 +197,14 @@ def process_raw(group, connection, config, metadata):
     np.save(debugFolder + "/" + "img.npy", data)
 
     # Remove readout oversampling
-    if metadata.encoding[0].reconSpace.matrixSize.x != 0:
-        offset = int((data.shape[1] - metadata.encoding[0].reconSpace.matrixSize.x)/2)
-        data = data[:,offset:offset+metadata.encoding[0].reconSpace.matrixSize.x]
+    if mrdHeader.encoding[0].reconSpace.matrixSize.x != 0:
+        offset = int((data.shape[1] - mrdHeader.encoding[0].reconSpace.matrixSize.x)/2)
+        data = data[:,offset:offset+mrdHeader.encoding[0].reconSpace.matrixSize.x]
 
     # Remove phase oversampling
-    if metadata.encoding[0].reconSpace.matrixSize.y != 0:
-        offset = int((data.shape[0] - metadata.encoding[0].reconSpace.matrixSize.y)/2)
-        data = data[offset:offset+metadata.encoding[0].reconSpace.matrixSize.y,:]
+    if mrdHeader.encoding[0].reconSpace.matrixSize.y != 0:
+        offset = int((data.shape[0] - mrdHeader.encoding[0].reconSpace.matrixSize.y)/2)
+        data = data[offset:offset+mrdHeader.encoding[0].reconSpace.matrixSize.y,:]
 
     logging.debug("Image without oversampling is size %s" % (data.shape,))
     np.save(debugFolder + "/" + "imgCrop.npy", data)
@@ -224,9 +228,9 @@ def process_raw(group, connection, config, metadata):
 
         # Set the header information
         tmpImg.setHead(mrdhelper.update_img_header_from_raw(tmpImg.getHead(), rawHead[phs]))
-        tmpImg.field_of_view = (ctypes.c_float(metadata.encoding[0].reconSpace.fieldOfView_mm.x), 
-                                ctypes.c_float(metadata.encoding[0].reconSpace.fieldOfView_mm.y), 
-                                ctypes.c_float(metadata.encoding[0].reconSpace.fieldOfView_mm.z))
+        tmpImg.field_of_view = (ctypes.c_float(mrdHeader.encoding[0].reconSpace.fieldOfView_mm.x), 
+                                ctypes.c_float(mrdHeader.encoding[0].reconSpace.fieldOfView_mm.y), 
+                                ctypes.c_float(mrdHeader.encoding[0].reconSpace.fieldOfView_mm.z))
         tmpImg.image_index = phs
 
         # Set ISMRMRD Meta Attributes
@@ -241,28 +245,32 @@ def process_raw(group, connection, config, metadata):
         imagesOut.append(tmpImg)
 
     # Call process_image() to invert image contrast
-    imagesOut = process_image(imagesOut, connection, config, metadata)
+    imagesOut = process_image(imagesOut, connection, config, mrdHeader)
 
     return imagesOut
 
 
-def process_image(images, connection, config, metadata):
-    if len(images) == 0:
+def process_image(imgGroup, connection, config, mrdHeader):
+    if len(imgGroup) == 0:
         return []
+
+    logging.info(f'-----------------------------------------------')
+    logging.info(f'     process_image called with {len(imgGroup)} images')
+    logging.info(f'-----------------------------------------------')
 
     # Create folder, if necessary
     if not os.path.exists(debugFolder):
         os.makedirs(debugFolder)
         logging.debug("Created folder " + debugFolder + " for debug output files")
 
-    logging.debug("Processing data with %d images of type %s", len(images), ismrmrd.get_dtype_from_data_type(images[0].data_type))
+    logging.debug("Processing data with %d images of type %s", len(imgGroup), ismrmrd.get_dtype_from_data_type(imgGroup[0].data_type))
 
     # Note: The MRD Image class stores data as [cha z y x]
 
     # Extract image data into a 5D array of size [img cha z y x]
-    data = np.stack([img.data                              for img in images])
-    head = [img.getHead()                                  for img in images]
-    meta = [ismrmrd.Meta.deserialize(img.attribute_string) for img in images]
+    data = np.stack([img.data                              for img in imgGroup])
+    head = [img.getHead()                                  for img in imgGroup]
+    meta = [ismrmrd.Meta.deserialize(img.attribute_string) for img in imgGroup]
 
     # Reformat data to [y x z cha img], i.e. [row col] for the first two dimensions
     data = data.transpose((3, 4, 2, 1, 0))
@@ -284,8 +292,8 @@ def process_image(images, connection, config, metadata):
     else:
         # Determine max value (12 or 16 bit)
         BitsStored = 12
-        if (mrdhelper.get_userParameterLong_value(metadata, "BitsStored") is not None):
-            BitsStored = mrdhelper.get_userParameterLong_value(metadata, "BitsStored")
+        if (mrdhelper.get_userParameterLong_value(mrdHeader, "BitsStored") is not None):
+            BitsStored = mrdhelper.get_userParameterLong_value(mrdHeader, "BitsStored")
         maxVal = 2**BitsStored - 1
 
         # Normalize and convert to int16
