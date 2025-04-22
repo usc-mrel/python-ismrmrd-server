@@ -285,7 +285,7 @@ def process_image(imgGroup, connection, config, mrdHeader):
     logging.debug("Original image data is size %s" % (data.shape,))
     np.save(debugFolder + "/" + "imgOrig.npy", data)
 
-    if ('parameters' in config) and ('options' in config['parameters']) and (config['parameters']['options'] == 'complex'):
+    if mrdhelper.get_json_config_param(config, 'options') == 'complex':
         # Complex images are requested
         data = data.astype(np.complex64)
         maxVal = data.max()
@@ -307,7 +307,7 @@ def process_image(imgGroup, connection, config, mrdHeader):
     data = np.abs(data)
     np.save(debugFolder + "/" + "imgInverted.npy", data)
 
-    if ('parameters' in config) and ('options' in config['parameters']) and (config['parameters']['options'] == 'rgb'):
+    if mrdhelper.get_json_config_param(config, 'options') == 'rgb':
         logging.info('Converting data into RGB')
         if data.shape[3] != 1:
             logging.error("Multi-channel data is not supported")
@@ -353,7 +353,7 @@ def process_image(imgGroup, connection, config, mrdHeader):
         if (imagesOut[iImg].data_type == ismrmrd.DATATYPE_CXFLOAT) or (imagesOut[iImg].data_type == ismrmrd.DATATYPE_CXDOUBLE):
             oldHeader.image_type = ismrmrd.IMTYPE_COMPLEX
 
-        if ('parameters' in config) and ('options' in config['parameters']) and (config['parameters']['options'] == 'rgb'):
+        if mrdhelper.get_json_config_param(config, 'options') == 'rgb':
             # Set RGB parameters
             oldHeader.image_type = 6  # To be defined as ismrmrd.IMTYPE_RGB
             oldHeader.channels   = 3  # RGB "channels".  This is set by from_array, but need to be explicit as we're copying the old header instead
@@ -377,27 +377,26 @@ def process_image(imgGroup, connection, config, mrdHeader):
         tmpMeta['SequenceDescriptionAdditional']  = 'FIRE'
         tmpMeta['Keep_image_geometry']            = 1
 
-        if ('parameters' in config) and ('options' in config['parameters']):
+        if mrdhelper.get_json_config_param(config, 'options') == 'roi':
             # Example for sending ROIs
-            if config['parameters']['options'] == 'roi':
-                logging.info("Creating ROI_example")
-                tmpMeta['ROI_example'] = create_example_roi(data.shape)
+            logging.info("Creating ROI_example")
+            tmpMeta['ROI_example'] = create_example_roi(data.shape)
 
+        if mrdhelper.get_json_config_param(config, 'options') == 'colormap':
             # Example for setting colormap
-            if config['parameters']['options'] == 'colormap':
-                tmpMeta['LUTFileName'] = 'MicroDeltaHotMetal.pal'
+            tmpMeta['LUTFileName'] = 'MicroDeltaHotMetal.pal'
 
+        if mrdhelper.get_json_config_param(config, 'options') == 'rgb':
             # Example for setting RGB
-            if config['parameters']['options'] == 'rgb':
-                tmpMeta['SequenceDescriptionAdditional']  = 'FIRE_RGB'
-                tmpMeta['ImageProcessingHistory'].append('RGB')
+            tmpMeta['SequenceDescriptionAdditional']  = 'FIRE_RGB'
+            tmpMeta['ImageProcessingHistory'].append('RGB')
 
-                # RGB images have no windowing
-                del tmpMeta['WindowCenter']
-                del tmpMeta['WindowWidth']
+            # RGB images have no windowing
+            del tmpMeta['WindowCenter']
+            del tmpMeta['WindowWidth']
 
-                # RGB images shouldn't undergo further processing, e.g. orientation or distortion correction
-                tmpMeta['InternalSend'] = 1
+            # RGB images shouldn't undergo further processing, e.g. orientation or distortion correction
+            tmpMeta['InternalSend'] = 1
 
         # Add image orientation directions to MetaAttributes if not already present
         if tmpMeta.get('ImageRowDir') is None:
