@@ -20,7 +20,7 @@
 
 	// Default setting for Windows changes files to CRLF, so match this to avoid all files
 	// being marked as changed.  Could be disabled for non-Windows hosts
-	"postCreateCommand": "git config --global core.autocrlf true",
+	"postCreateCommand": "git config --global core.autocrlf true && pip install ipykernel",
 
 	"customizations": {
 		"vscode": {
