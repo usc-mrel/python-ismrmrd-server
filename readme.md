@@ -14,6 +14,7 @@
 * 3. [Code design](#Codedesign)
 * 4. [Saving incoming data](#Savingincomingdata)
 * 5. [Startup scripts](#Startupscripts)
+* 6. [Building a custom Docker image](#CustomDockers)
 
 <!-- vscode-markdown-toc-config
 	numbering=true
@@ -394,3 +395,20 @@ There are three scripts that may be useful when starting the Python server in a 
 - [sync-code-and-start-fire-python-server.sh](sync-code-and-start-fire-python-server.sh):  This script copies all files from ``/tmp/share/code/`` to ``/opt/code/python-ismrmrd-server/``.  These paths are relative to the chroot container and when run with FIRE, ``/tmp/share/code/`` is a shared folder from the host computer at ``%CustomerIceProgs%\fire\share\code\``.  This "sync" step allows Python code to be modified on the host computer and executed by the Python reconstruction process.  The Python reconstruction program is then started in the same way as in [start-fire-python-server.sh](start-fire-python-server.sh).  This is the startup script specified in the default fire.ini configuration file.  However, this script should not be used in stable projects, as overwriting existing files with those in ``/tmp/share/code`` is likely undesirable.
 
 - [start-fire-python-server-with-data-storage.sh](start-fire-python-server-with-data-storage.sh):  This script is the same as [start-fire-python-server.sh](start-fire-python-server.sh), but saves incoming data (raw k-space readouts or images) to files in ``/tmp/share/saved_data``, which is on the host computer at ``%CustomerIceProgs%\fire\share\saved_data``.  This is useful to save a copy of MRD formatted data (particularly for image-based workflows) for offline development, but this option should be used carefully, as raw data can be quite large and can overwhelm the limited hard drive space on the Windows host.
+
+##  6. <a name='CustomDockers'></a>Building a custom Docker image
+Integration of a custom module into a MRD server using this repository can often be achieved by creating only the module itself and using the server framework of python-ismrmrd-server without modification.  This can greatly simplify development and maintenance.
+
+To implement a new module, create a copy of an example one (e.g. [invertcontrast.py](invertcontrast.py)) as a starting point with a new name.  Add the required functionality to this module and optionally create a JSON config for real-time configuration (see [invertcontrast.json](invertcontrast.json) for example).
+
+The `kspacekelvin/fire-python` and `kspacekelvin/fire-python-devcon` Docker images can be used as starting points for building a custom Docker image.  The custom Dockerfile then only needs to copy over the module's .py (and .json if applicable) files and install required dependencies/packages.
+
+An example of this approach is provided in the [custom](./custom) folder, which contains:
+- [filter.py](./custom/filter.py): A module derived from [invertcontrast.py](invertcontrast.py) that implements an image [median_filter from the scipy package](https://docs.scipy.org/doc/scipy/reference/generated/scipy.ndimage.median_filter.html).  Compare this file to [invertcontrast.py from this commit](https://github.com/kspaceKelvin/python-ismrmrd-server/blob/3f52bf1504b1fed56b28d29b9fff560c5138e9f3/invertcontrast.py) see to the changes made.
+- [filter.json](./custom/filter.json): A JSON config file that allows configuration of the median filter window size by the client during runtime.
+- [custom.dockerfile](./custom/custom.dockerfile): A simplified Dockerfile that uses this python-ismrmrd-server Docker as a starting point.
+
+To build the custom Docker image, open a terminal in the `custom` folder and run:
+```
+docker build --no-cache -t fire-python-custom -f custom.dockerfile ./
+```
