@@ -63,8 +63,10 @@ if __name__ == '__main__':
     if args.logfile:
         print("Logging to file:", args.logfile)
 
-        if not os.path.exists(os.path.dirname(args.logfile)):
-            os.makedirs(os.path.dirname(args.logfile))
+        # Get full path to the log file
+        absLogPath = os.path.abspath(args.logfile)
+        if not os.path.exists(os.path.dirname(absLogPath)):
+            os.makedirs(os.path.dirname(absLogPath))
 
         logging.basicConfig(
             format=fmt,
