@@ -2,7 +2,6 @@ name: mrd
 channels:
   - ismrmrd
   - conda-forge
-  - defaults
 dependencies:
   - python=3.10.13
   - ismrmrd::ismrmrd-python=1.14.1
@@ -19,4 +18,4 @@ dependencies:
   - pip:
     - sigpy==0.1.26
     - rtoml==0.10.0
-  - dos2unix=7.4.2       # For fixing line ending issues from Windows
+  - m2-dos2unix=7.3.3    # For fixing line ending issues from Windows

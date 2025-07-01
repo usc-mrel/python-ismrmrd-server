@@ -160,12 +160,14 @@ def process_raw(group, config, metadata):
     data = data.astype(np.int16)
 
     # Remove readout oversampling
-    offset = int((data.shape[1] - metadata.encoding[0].reconSpace.matrixSize.x)/2)
-    data = data[:,offset:offset+metadata.encoding[0].reconSpace.matrixSize.x]
+    if metadata.encoding[0].reconSpace.matrixSize.x != 0:
+        offset = int((data.shape[1] - metadata.encoding[0].reconSpace.matrixSize.x)/2)
+        data = data[:,offset:offset+metadata.encoding[0].reconSpace.matrixSize.x]
 
     # Remove phase oversampling
-    offset = int((data.shape[0] - metadata.encoding[0].reconSpace.matrixSize.y)/2)
-    data = data[offset:offset+metadata.encoding[0].reconSpace.matrixSize.y,:]
+    if metadata.encoding[0].reconSpace.matrixSize.y != 0:
+        offset = int((data.shape[0] - metadata.encoding[0].reconSpace.matrixSize.y)/2)
+        data = data[offset:offset+metadata.encoding[0].reconSpace.matrixSize.y,:]
 
     logging.debug("Image without oversampling is size %s" % (data.shape,))
     np.save(debugFolder + "/" + "imgCrop.npy", data)

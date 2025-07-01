@@ -39,21 +39,25 @@ def conditionalGroups(iterable, predicateAccept, predicateFinish):
         iterable.send_close()
 
 
-def process(connection, config, metadata):
+def process(connection, config, mrdHeader):
     logging.info("Config: \n%s", config)
-    logging.info("Metadata: \n%s", metadata)
+    logging.info("MRD Header: \n%s", mrdHeader)
 
     # Discard phase correction lines and accumulate lines until "ACQ_LAST_IN_SLICE" is set
     for group in conditionalGroups(connection, lambda acq: not acq.is_flag_set(ismrmrd.ACQ_IS_PHASECORR_DATA), lambda acq: acq.is_flag_set(ismrmrd.ACQ_LAST_IN_SLICE)):
-        image = process_group(group, config, metadata)
+        image = process_group(group, config, mrdHeader)
 
         logging.debug("Sending image to client:\n%s", image)
         connection.send_image(image)
 
 
-def process_group(group, config, metadata):
+def process_group(group, config, mrdHeader):
     if len(group) == 0:
         return []
+
+    logging.info(f'-------------------------------------------------')
+    logging.info(f'     process_group called with {len(group)} readouts')
+    logging.info(f'-------------------------------------------------')
 
     # Create folder, if necessary
     if not os.path.exists(debugFolder):
@@ -84,8 +88,8 @@ def process_group(group, config, metadata):
 
     # Determine max value (12 or 16 bit)
     BitsStored = 12
-    if (mrdhelper.get_userParameterLong_value(metadata, "BitsStored") is not None):
-        BitsStored = mrdhelper.get_userParameterLong_value(metadata, "BitsStored")
+    if (mrdhelper.get_userParameterLong_value(mrdHeader, "BitsStored") is not None):
+        BitsStored = mrdhelper.get_userParameterLong_value(mrdHeader, "BitsStored")
     maxVal = 2**BitsStored - 1
 
     # Normalize and convert to int16
@@ -94,12 +98,14 @@ def process_group(group, config, metadata):
     data = data.astype(np.int16)
 
     # Remove readout oversampling
-    offset = int((data.shape[0] - metadata.encoding[0].reconSpace.matrixSize.x)/2)
-    data = data[offset:offset+metadata.encoding[0].reconSpace.matrixSize.x,:]
+    if mrdHeader.encoding[0].reconSpace.matrixSize.x != 0:
+        offset = int((data.shape[0] - mrdHeader.encoding[0].reconSpace.matrixSize.x)/2)
+        data = data[offset:offset+mrdHeader.encoding[0].reconSpace.matrixSize.x,:]
 
     # Remove phase oversampling
-    offset = int((data.shape[1] - metadata.encoding[0].reconSpace.matrixSize.y)/2)
-    data = data[:,offset:offset+metadata.encoding[0].reconSpace.matrixSize.y]
+    if mrdHeader.encoding[0].reconSpace.matrixSize.y != 0:
+        offset = int((data.shape[1] - mrdHeader.encoding[0].reconSpace.matrixSize.y)/2)
+        data = data[:,offset:offset+mrdHeader.encoding[0].reconSpace.matrixSize.y]
 
     logging.debug("Image without oversampling is size %s" % (data.shape,))
     np.save(debugFolder + "/" + "imgCrop.npy", data)
@@ -112,9 +118,9 @@ def process_group(group, config, metadata):
     image.image_index = 1
 
     # Set field of view
-    image.field_of_view = (ctypes.c_float(metadata.encoding[0].reconSpace.fieldOfView_mm.x), 
-                            ctypes.c_float(metadata.encoding[0].reconSpace.fieldOfView_mm.y), 
-                            ctypes.c_float(metadata.encoding[0].reconSpace.fieldOfView_mm.z))
+    image.field_of_view = (ctypes.c_float(mrdHeader.encoding[0].reconSpace.fieldOfView_mm.x), 
+                            ctypes.c_float(mrdHeader.encoding[0].reconSpace.fieldOfView_mm.y), 
+                            ctypes.c_float(mrdHeader.encoding[0].reconSpace.fieldOfView_mm.z))
 
     # Set ISMRMRD Meta Attributes
     meta = ismrmrd.Meta({'DataRole':               'Image',

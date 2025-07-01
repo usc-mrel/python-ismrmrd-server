@@ -5,7 +5,9 @@
 		"dockerfile": "../docker/Dockerfile",
 		"target":     "python-mrd-devcontainer",
 		"context":    "../",
-		"cacheFrom":  "docker.io/kspacekelvin/fire-python-devcon"
+		"cacheFrom":  [
+			"docker.io/kspacekelvin/fire-python-devcon",
+			"docker.io/kspacekelvin/fire-python:buildcache"]
 	},
 
 	// To enable your local GPUs in container if they are on enabled by default
@@ -18,7 +20,7 @@
 
 	// Default setting for Windows changes files to CRLF, so match this to avoid all files
 	// being marked as changed.  Could be disabled for non-Windows hosts
-	"postCreateCommand": "git config --global core.autocrlf true",
+	"postCreateCommand": "git config --global core.autocrlf true && pip install ipykernel",
 
 	"customizations": {
 		"vscode": {

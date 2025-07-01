@@ -12,6 +12,7 @@
             "request": "launch",
             "program": "${workspaceFolder}/main.py",
             "args": [
+
                 "-p", "9028",
                 // "-m",
                 // "-v",
@@ -30,6 +31,7 @@
             "program": "${workspaceFolder}/client.py",
             "args": [
                 "${workspaceFolder}/data/shepplogan_raw.mrd",
+                "-p", "9020",
                 "-c", "invertcontrast",
                 "-o", "${workspaceFolder}/data/shepplogan_recon.mrd"
             ],

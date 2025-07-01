@@ -1,8 +1,6 @@
 name: mrd
 channels:
-  - ismrmrd
   - conda-forge
-  - defaults
 dependencies:
   - python=3.10.13
   # - ismrmrd::ismrmrd-python=1.14.1        # Package not available on Windows -- use pip install instead
@@ -14,4 +12,4 @@ dependencies:
   - pydicom=3.0.1        # used by dicom2mrd.py to parse DICOM data
   - numpy=1.26.0
   - git=2.30.2
-  - dos2unix=7.4.2       # For fixing line ending issues from Windows
+  - m2-dos2unix=7.3.3    # For fixing line ending issues from Windows

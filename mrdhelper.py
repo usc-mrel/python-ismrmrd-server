@@ -66,11 +66,11 @@ def get_userParameterDouble_value(metadata, name):
     return None
 
 def get_userParameterString_value(metadata, name):
-    """Get a value from MRD Header userParameterDouble (returns None if key not found)"""
+    """Get a value from MRD Header userParameterString (returns None if key not found)"""
     if metadata.userParameters is not None:
-        for param in metadata.userParameters.userParameterDouble:
+        for param in metadata.userParameters.userParameterString:
             if param.name == name:
-                return float(param.value)
+                return param.value
     return None
 
 def get_userParameterBase64_value(metadata, name):
@@ -142,34 +142,45 @@ def extract_minihead_param(miniHead, name, strType):
     else:
         return values[0]
 
-def get_json_param(config, field, type=None):
-    """Get a field from the JSON additional config with optional type casting"""
+def get_json_config_param(config, key, default=None, type='str'):
+    """
+    Read a parameter from JSON config
+        Input:
+            - config  : dict of parameters
+            - key     : name (key) of parameter
+            - default : value if key is not present or config is invalid
+            - type    : type casting of the parameter (int, float, string, bool)
+        Output:
+            - value of parameter, or default if absent
+    """
     if not isinstance(config, dict):
-        return None
+        return default
 
     if not 'parameters' in config:
-        return None
+        return default
 
-    if not field in config['parameters']:
-        return None
+    if not key in config['parameters']:
+        return default
 
-    value = config['parameters'][field]
+    value = config['parameters'][key]
 
-    if type is None:
-        return value
-    elif type == 'int':
+    if type == 'int':
         return int(value)
     elif (type == 'float') or (type == 'double'):
         return float(value)
-    elif (type == 'string') or (type == 'choice'):
+    elif (type == 'string') or (type == 'str') or (type == 'choice'):
         return str(value)
     elif (type == 'bool') or (type == 'boolean'):
         if isinstance(value, bool):
             return value
+        elif 'true' in value.lower():
+            return True
+        elif 'false' in value.lower():
+            return False
         else:
-            return ('true' in value.lower())
+            return default
     else:
-        raise Exception("'type' must be None (no type conversion), int, float, string, or bool")
+        raise Exception("'type' must be int, float, string, or bool")
 
 def create_roi(x, y, rgb = (1, 0, 0), thickness = 1, style: int = 0, visibility: int = 1):
     """

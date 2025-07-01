@@ -72,6 +72,7 @@ def main(args):
         images = []
         rois   = []
         heads  = []
+        metas  = []
         for imgNum in range(0, dset.number_of_images(group)):
             image = dset.read_image(group, imgNum)
 
@@ -103,7 +104,7 @@ def main(args):
             meta = ismrmrd.Meta.deserialize(image.attribute_string)
             imgRois = []
             for key in meta.keys():
-                if not key.startswith('ROI_'):
+                if not key.startswith('ROI_') and not key.startswith('GT_ROI_'):
                     continue
 
                 roi = meta[key]
@@ -122,21 +123,55 @@ def main(args):
             for chasli in range(image.data.shape[0]*image.data.shape[1]):
                 heads.append(image.getHead())
 
+            for chasli in range(image.data.shape[0]*image.data.shape[1]):
+                metas.append(meta)
+
         print("  Read in %s images of shape %s" % (len(images), images[0].size[::-1]))
 
         hasRois = any([len(x) > 0 for x in rois])
 
-        # Window/level images
-        maxVal = np.median([np.percentile(np.array(img), 95) for img in images])
-        minVal = np.median([np.percentile(np.array(img),  5) for img in images])
+        # Window/level for all images in series
+        seriesMaxVal = np.median([np.percentile(np.array(img), 95) for img in images])
+        seriesMinVal = np.median([np.percentile(np.array(img),  5) for img in images])
 
         # Special case for "sparse" images, usually just text
-        if maxVal == minVal:
-            maxVal = np.median([np.max(np.array(img)) for img in images])
-            minVal = np.median([np.min(np.array(img)) for img in images])
+        if seriesMaxVal == seriesMinVal:
+            seriesMaxVal = np.median([np.max(np.array(img)) for img in images])
+            seriesMinVal = np.median([np.min(np.array(img)) for img in images])
 
         imagesWL = []
-        for img, roi in zip(images, rois):
+        for img, roi, meta in zip(images, rois, metas):
+            # Use window/level from MetaAttributes if available
+            minVal = seriesMinVal
+            maxVal = seriesMaxVal
+
+            if (('WindowCenter' in meta) and ('WindowWidth' in meta)):
+                minVal = float(meta['WindowCenter']) - float(meta['WindowWidth'])/2
+                maxVal = float(meta['WindowCenter']) + float(meta['WindowWidth'])/2
+            elif (('GADGETRON_WindowCenter' in meta) and ('GADGETRON_WindowWidth' in meta)):
+                minVal = float(meta['GADGETRON_WindowCenter']) - float(meta['GADGETRON_WindowWidth'])/2
+                maxVal = float(meta['GADGETRON_WindowCenter']) + float(meta['GADGETRON_WindowWidth'])/2
+
+            if ('LUTFileName' in meta) or ('GADGETRON_ColorMap' in meta):
+                LUTFileName = meta['LUTFileName'] if 'LUTFileName' in meta else meta['GADGETRON_ColorMap']
+
+                # Replace extension with '.npy'
+                LUTFileName = os.path.splitext(LUTFileName)[0] + '.npy'
+
+                # LUT file is a (256,3) numpy array of RGB values between 0 and 255
+                if os.path.exists(LUTFileName):
+                    palette = np.load(LUTFileName)
+                    palette = palette.flatten().tolist()  # As required by PIL
+                # Look in subdirectory 'colormaps' if not found in current directory
+                elif os.path.exists(os.path.join('colormaps', LUTFileName)):
+                    palette = np.load(os.path.join('colormaps', LUTFileName))
+                    palette = palette.flatten().tolist()  # As required by PIL
+                else:
+                    print("LUT file %s specified by MetaAttributes, but not found" % (LUTFileName))
+                    palette = None
+            else:
+                palette = None
+
             if img.mode != 'RGB':
                 if hasRois:
                     # Convert to RGB mode to allow colored ROI overlays
@@ -145,23 +180,34 @@ def main(args):
                     if maxVal != minVal:
                         data *= 255/(maxVal - minVal)
                     data = np.clip(data, 0, 255)
-                    tmpImg = Image.fromarray(np.repeat(data[:,:,np.newaxis],3,axis=2).astype(np.uint8), mode='RGB')
+                    if palette is not None:
+                        tmpImg = Image.fromarray(data.astype(np.uint8), mode='P')
+                        tmpImg.putpalette(palette)
+                        tmpImg = tmpImg.convert('RGB')  # Needed in order to draw ROIs
+                    else:
+                        tmpImg = Image.fromarray(np.repeat(data[:,:,np.newaxis],3,axis=2).astype(np.uint8), mode='RGB')
 
                     if args.rescale != 1:
                         tmpImg = tmpImg.resize(tuple(args.rescale*x for x in tmpImg.size))
                         for i in range(len(roi)):
                             roi[i] = tuple(([args.rescale*x for x in roi[i][0]], [args.rescale*y for y in roi[i][1]], roi[i][2], roi[i][3]))
 
-                    draw = ImageDraw.Draw(tmpImg)
                     for (x, y, rgb, thickness) in roi:
-                        draw.line(list(zip(x, y)), fill=(int(rgb[0]*255), int(rgb[1]*255), int(rgb[2]*255), 0), width=int(thickness))
+                        draw = ImageDraw.Draw(tmpImg)
+                        draw.line(list(zip(x, y)), fill=(int(rgb[0]*255), int(rgb[1]*255), int(rgb[2]*255), 255), width=int(thickness))
                     imagesWL.append(tmpImg)
                 else:
                     data = np.array(img).astype(float)
                     data -= minVal
                     data *= 255/(maxVal - minVal)
                     data = np.clip(data, 0, 255)
-                    imagesWL.append(Image.fromarray(data))
+
+                    if palette is not None:
+                        tmpImg = Image.fromarray(data.astype(np.uint8), mode='P')
+                        tmpImg.putpalette(palette)
+                        imagesWL.append(tmpImg)
+                    else:
+                        imagesWL.append(Image.fromarray(data))
             else:
                 imagesWL.append(img)
 
@@ -183,7 +229,13 @@ def main(args):
                     # Loop over non-slice dimension
                     imagesWLMosaic = []
                     for idx in range(len(imagesWLSplit[0])):
-                        imagesWLMosaic.append(Image.fromarray(np.hstack([img[idx] for img in imagesWLSplit])))
+                        imgMode = imagesWLSplit[0][idx].mode
+                        tmpImg = Image.fromarray(np.hstack([img[idx] for img in imagesWLSplit]), mode=imgMode)
+                        if imgMode == 'P':
+                            palette = imagesWLSplit[0][0].getpalette()
+                            tmpImg.putpalette(palette)
+                        imagesWLMosaic.append(tmpImg)
+
                     imagesWL = imagesWLMosaic
 
         # Add SequenceDescriptionAdditional to filename, if present
