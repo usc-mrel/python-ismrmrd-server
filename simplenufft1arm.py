@@ -8,6 +8,7 @@ import mrdhelper
 import time
 import os
 import rtoml
+import connection
 
 from scipy.io import loadmat
 import sigpy as sp
@@ -18,7 +19,7 @@ import coils
 debugFolder = "/tmp/share/debug"
 
 
-def process(connection, config, metadata):
+def process(conn: connection.Connection, config, metadata):
     logging.disable(logging.DEBUG)
     
     logging.info("Config: \n%s", config)
@@ -49,7 +50,7 @@ def process(connection, config, metadata):
     
     # start = time.perf_counter()
     # get the k-space trajectory based on the metadata hash.
-    traj_name = metadata.userParameters.userParameterString[1].value
+    traj_name = metadata.userParameters.userParameterString[1].value[:32] # Get first 32 chars, because a bug sometimes causes this field to have /OSP added to the end.
 
     # load the .mat file containing the trajectory
     # Search for the file in the metafile_paths
@@ -128,14 +129,15 @@ def process(connection, config, metadata):
     sens = []
     wf_list = []
 
-    for arm in connection:
+    arm: ismrmrd.Acquisition | ismrmrd.Waveform | None
+    for arm in conn:
         if arm is None:
             break
         start_iter = time.perf_counter()
         
         if type(arm) is ismrmrd.Acquisition:
             # First arm came, if GIRF is requested, correct trajectories and reupload.
-            if (arm.idx.kspace_encode_step_1 == 0) and APPLY_GIRF:
+            if (arm.scan_counter == 1) and APPLY_GIRF:
                 r_GCS2RCS = np.array(  [[0,    1,   0],  # [PE]   [0 1 0] * [r]
                                         [1,    0,   0],  # [RO] = [1 0 0] * [c]
                                         [0,    0,   1]]) # [SL]   [0 0 1] * [s]
@@ -151,7 +153,7 @@ def process(connection, config, metadata):
                 k_pred = 0.5 * (k_pred / kmax) * msize
                 coord_gpu = sp.to_device(k_pred, device=device) # Replace  the original k-space
 
-            if (arm.idx.kspace_encode_step_1 == 0) and (arm.data.shape[1]-pre_discard/2) == coord_gpu.shape[1]/2:
+            if (arm.scan_counter == 1) and (arm.data.shape[1]-pre_discard/2) == coord_gpu.shape[1]/2:
                 # Check if the OS is removed. Should only happen with offline recon.
                 coord_gpu = coord_gpu[:,::2,:]
                 w_gpu = w_gpu[:,::2]
@@ -174,7 +176,7 @@ def process(connection, config, metadata):
             if arm_counter == n_unique_angles:
                 arm_counter = 0
 
-            if ((arm.idx.kspace_encode_step_1+1) % window_shift) == 0 and ((arm.idx.kspace_encode_step_1+1) >= n_arm_per_frame):
+            if ((arm.scan_counter) % window_shift) == 0 and ((arm.scan_counter) >= n_arm_per_frame):
                 start = time.perf_counter()
                 if coil_combine == "adaptive" and rep_counter == 0:
                     sens = sp.to_device(process_csm(frames), device=device)
@@ -188,7 +190,7 @@ def process(connection, config, metadata):
                 logging.debug("Elapsed time for frame processing: %f secs.", end-start)
                 del frames[:window_shift]
                 logging.debug("Sending image to client:\n%s", image)
-                connection.send_image(image)
+                conn.send_image(image)
 
                 rep_counter += 1
 
@@ -199,9 +201,9 @@ def process(connection, config, metadata):
 
     # Send waveforms back to save them with images
     for wf in wf_list:
-        connection.send_waveform(wf)
+        conn.send_waveform(wf)
 
-    connection.send_close()
+    conn.send_close()
     logging.debug('Reconstruction is finished.')
 
 
@@ -209,7 +211,7 @@ def process_csm(frames):
     data = np.zeros(frames[0].shape, dtype=np.complex128)
     for g in frames:
         data += sp.to_device(g)
-    (csm_est, rho) = coils.calculate_csm_inati_iter(data, smoothing=5)
+    (csm_est, rho) = coils.calculate_csm_inati_iter(data, smoothing=32)
 
     return csm_est
 

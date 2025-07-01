@@ -4,7 +4,8 @@ Utilities for coil sensivity maps, pre-whitening, etc
 """
 import numpy as np
 from scipy import ndimage
-
+from scipy.fft import fft, ifft, fftn, ifftn, fftshift, ifftshift
+from scipy.signal.windows import tukey
 
 def calculate_prewhitening(noise, scale_factor=1.0):
     '''Calculates the noise prewhitening matrix
@@ -89,7 +90,7 @@ def calculate_csm_walsh(img, smoothing=5, niter=3):
     return (csm, rho)
 
 
-def calculate_csm_inati_iter(im, smoothing=5, niter=5, thresh=1e-3,
+def calculate_csm_inati_iter(im, smoothing=32, niter=5, thresh=1e-3,
                              verbose=False):
     """ Fast, iterative coil map estimation for 2D or 3D acquisitions.
 
@@ -143,17 +144,17 @@ def calculate_csm_inati_iter(im, smoothing=5, niter=5, thresh=1e-3,
         images_are_2D = False
 
     # convert smoothing kernel to array
-    if isinstance(smoothing, int):
-        smoothing = np.asarray([smoothing, ] * 3)
-    smoothing = np.asarray(smoothing)
-    if smoothing.ndim > 1 or smoothing.size != 3:
+    # if isinstance(smoothing, int):
+    #     smoothing = np.asarray([smoothing, ] * 3)
+    # smoothing = np.asarray(smoothing)
+    # if smoothing.ndim > 1 or smoothing.size != 3:
         raise ValueError("smoothing should be an int or a 3-element 1D array")
 
-    if images_are_2D:
-        smoothing[2] = 1  # no smoothing along z in 2D case
+    # if images_are_2D:
+    #     smoothing[2] = 1  # no smoothing along z in 2D case
 
     # smoothing kernel is size 1 on the coil axis
-    smoothing = np.concatenate(([1, ], smoothing), axis=0)
+    # smoothing = np.concatenate(([1, ], smoothing), axis=0)
 
     ncha = im.shape[0]
 
@@ -222,7 +223,7 @@ def calculate_csm_inati_iter(im, smoothing=5, niter=5, thresh=1e-3,
     return coil_map, coil_combined
 
 
-def smooth(img, box=5):
+def smooth_(img, box=5):
     '''Smooths coil images
 
     :param img: Input complex images, ``[y, x] or [z, y, x]``
@@ -240,3 +241,48 @@ def smooth(img, box=5):
     simg = t_real + 1j*t_imag
 
     return simg
+
+def smooth(img, box=32):
+    '''Smooths coil images
+
+    :param img: Input complex images, ``[y, x] or [z, y, x]``
+    :param box: Smoothing block size (default ``5``)
+
+    :returns simg: Smoothed complex image ``[y,x] or [z,y,x]``
+    '''
+
+    ksp_filter = tukey(min(box, img.shape[1]), alpha=0.8)[None, :, None, None]*tukey(min(box, img.shape[2]), alpha=0.8)[None, None, :, None]*tukey(min(box, img.shape[3]), alpha=0.8)[None, None, None, :]
+    ksp_filter = np.pad(ksp_filter, 
+                        ((0,0), 
+                         ((img.shape[1] - ksp_filter.shape[1])//2, (img.shape[1] - ksp_filter.shape[1])//2), 
+                        ((img.shape[2] - ksp_filter.shape[2])//2, (img.shape[2] - ksp_filter.shape[2])//2), 
+                         ((img.shape[3] - ksp_filter.shape[3])//2, (img.shape[3] - ksp_filter.shape[3])//2)), 
+                        mode='constant', constant_values=0)
+    return cifftn(cfftn(img, axes=(1,2,3))*ksp_filter, axes=(1,2,3))
+
+
+
+def cifft(data, axis):
+    '''Centered IFFT.'''
+    return ifftshift(ifft(fftshift(data, axis), None, axis), axis)
+
+def cfft(data, axis):
+    '''Centered FFT.'''
+    return fftshift(fft(ifftshift(data, axis), None, axis), axis)
+
+def cfftn(data, axes):
+    '''Centered FFTN.'''
+    return fftshift(fftn(ifftshift(data, axes=axes), None, axes=axes), axes=axes)
+
+def cifftn(data, axes):
+    '''Centered FFTN.'''
+    return ifftshift(ifftn(fftshift(data, axes=axes), None, axes=axes), axes=axes)
+
+def centered_crop(image, crop_size):
+    """
+    Crop the center of the image to the specified size.
+    """
+    center = np.array(image.shape) // 2
+    start = center - np.array(crop_size) // 2
+    end = start + np.array(crop_size)
+    return image[tuple(slice(s, e) for s, e in zip(start, end))]
