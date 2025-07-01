@@ -13,4 +13,9 @@ dependencies:
   - pydicom=3.0.1        # used by dicom2mrd.py to parse DICOM data
   - numpy=1.26.0
   - git=2.30.2
+  - cupy
+  - pip
+  - pip:
+    - sigpy==0.1.26
+    - rtoml==0.10.0
   - m2-dos2unix=7.3.3    # For fixing line ending issues from Windows

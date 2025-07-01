@@ -1,0 +1,8 @@
+ismrmrd
+matplotlib     # used by rgb.py and provides various visualization tools including colormaps
+numpy
+rtoml
+sigpy
+pydicom       # used by dicom2mrd.py to parse DICOM data
+pynetdicom     # used by dicom2mrd.py to parse DICOM data
+cupy-cuda12x # For GPU acceleration at EDITER processing.

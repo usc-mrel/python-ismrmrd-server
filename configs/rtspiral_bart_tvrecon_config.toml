@@ -1,0 +1,13 @@
+[reconstruction]
+"apply_girf"        = true
+"gpu_device"        = 2
+
+"arms_per_frame"    = 7
+"num_recon_frames"  = 2000
+"num_chunks"        = 5         # Divide time frames into chunks so that they fit into a single GPU.
+"fov_oversampling"  = 1.5       # Oversampling factor for FOV
+"reg_lambda"        = 0.0002
+"num_iter"          = 120
+
+"coil_combine"      = "adaptive"
+"BART_TOOLBOX_PATH" = "/server/home/btasdelen/bart_helena"
