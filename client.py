@@ -19,8 +19,8 @@ defaults = {
     'filename':           '',
     'in_group':           '',
     'address':            'localhost',
-    'port':               9002, 
-    'outfile':            'out.h5',
+    'port':               9002,
+    'outfile':            None,
     'out_group':          str(datetime.datetime.now()),
     'config':             'invertcontrast',
     'config_local':       '',
@@ -322,6 +322,7 @@ def main(args):
     logging.info("Sent %5d acquisitions  |  Received %5d acquisitions", connection.sentAcqs,      recvWaveforms.value)
     logging.info("Sent %5d images        |  Received %5d images",       connection.sentImages,    recvImages.value)
     logging.info("Sent %5d waveforms     |  Received %5d waveforms",    connection.sentWaveforms, recvWaveforms.value)
+    logging.info("Results written to %s", args.outfile)
     logging.info("Session complete")
 
     return
@@ -340,7 +341,7 @@ if __name__ == '__main__':
     parser.add_argument('-C', '--config-local',                            help='Local configuration file')
     parser.add_argument('-w', '--send-waveforms',     action='store_true', help='Send waveform (physio) data')
     parser.add_argument('-v', '--verbose',            action='store_true', help='Verbose mode')
-    parser.add_argument('-l', '--logfile',                      type=str,  help='Path to log file')
+    parser.add_argument('-l', '--logfile',            type=str,            help='Path to log file')
     parser.add_argument(      '--ignore-json-config', action='store_true', help='Ignore config specified in JSON')
 
     parser.set_defaults(**defaults)
@@ -359,6 +360,11 @@ if __name__ == '__main__':
         logging.root.setLevel(logging.DEBUG)
     else:
         logging.root.setLevel(logging.INFO)
+
+    if args.outfile is None:
+        base, ext = os.path.splitext(args.filename)
+        args.outfile = base + '_results' + ext
+        logging.info("Output file not specified -- writing results to %s", args.outfile)
 
     # If a config is specified via the command line arguments, then set ignore_json_config to True
     if ('-c' in sys.argv) or ('--config' in sys.argv):
