@@ -67,6 +67,12 @@ RUN cd /opt/code && \
 # pydicom is used by dicom2mrd.py to parse DICOM data
 RUN pip3 install --no-cache-dir matplotlib==3.8.2 pydicom==3.0.1
 
+# Install additional Python packages required by the server
+RUN pip3 install --no-cache-dir \
+    rtoml \
+    sigpy \
+    cupy-cuda12x
+
 # Cleanup files not required after installation
 RUN apt-get clean && \
     rm -rf /var/lib/apt/lists/* && \

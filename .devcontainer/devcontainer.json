@@ -11,7 +11,7 @@
 	},
 
 	// To enable your local GPUs in container if they are on enabled by default
-	// "runArgs": [ "--gpus=all" ],
+	"runArgs": [ "--gpus=all" ],
 
 	// Use 'forwardPorts' to make a list of ports inside the container available locally.
 	"forwardPorts": [
