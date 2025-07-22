@@ -76,7 +76,7 @@ def main(args):
             return
 
     localConfigAdditionalText = None
-    if (args.config):
+    if (args.config) and (not args.config_local):
         configAdditionalFile = args.config + '.json'
         if os.path.exists(configAdditionalFile):
             logging.info("Found additional config file %s", configAdditionalFile)
