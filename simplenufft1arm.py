@@ -9,6 +9,7 @@ import time
 import os
 import rtoml
 import connection
+import pathlib
 
 from scipy.io import loadmat
 import sigpy as sp
@@ -27,7 +28,7 @@ def process(conn: connection.Connection, config, metadata):
 
     # We now read these parameters from toml file, so that we won't have to keep restarting the server when we change them.
     logging.info('''Loading and applying file configs/rtspiral_vs_config.toml''')
-    with open('configs/rtspiral_vs_config.toml') as jf:
+    with open(pathlib.Path(__file__).parent / 'configs/rtspiral_vs_config.toml') as jf:
         cfg = rtoml.load(jf)
 
     n_arm_per_frame = cfg['reconstruction']['arms_per_frame']
@@ -144,7 +145,7 @@ def process(conn: connection.Connection, config, metadata):
                 r_GCS2PCS = np.array([arm.phase_dir, -np.array(arm.read_dir), arm.slice_dir])
                 r_GCS2DCS = r_PCS2DCS.dot(r_GCS2PCS)
                 sR['R'] = r_GCS2DCS.dot(r_GCS2RCS)
-                k_pred, _ = GIRF.apply_GIRF(g_nom, dt, sR, tRR)
+                k_pred, _ = GIRF.apply_GIRF(g_nom, dt, sR, tRR=tRR)
                 # k_pred = np.flip(k_pred[:,:,0:2], axis=2) # Drop the z
                 k_pred = k_pred[:,:,0:2] # Drop the z
 

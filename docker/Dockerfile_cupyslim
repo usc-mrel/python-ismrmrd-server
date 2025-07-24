@@ -57,16 +57,14 @@ RUN apt-get update && apt-get install --no-install-recommends -y libxslt1.1 libh
 RUN echo "set positionlog" > ~/.nanorc
 
 # Python MRD library
-RUN pip3 install --break-system-packages h5py==3.10.0 ismrmrd==1.14.1
-
-RUN cd /opt/code && \
-    git clone https://github.com/ismrmrd/ismrmrd-python-tools.git && \
-    cd /opt/code/ismrmrd-python-tools && \
-    pip3 install --break-system-packages --no-cache-dir .
-
 # matplotlib is used by rgb.py and provides various visualization tools including colormaps
 # pydicom is used by dicom2mrd.py to parse DICOM data
-RUN pip3 install --break-system-packages --no-cache-dir matplotlib==3.8.2 pydicom==3.0.1 rtoml sigpy cupy-cuda12x
+RUN pip3 install --break-system-packages h5py==3.10.0 ismrmrd==1.14.1 && \
+    cd /opt/code && \
+    git clone https://github.com/ismrmrd/ismrmrd-python-tools.git && \
+    cd /opt/code/ismrmrd-python-tools && \
+    pip3 install --break-system-packages --no-cache-dir . && \
+    pip3 install --break-system-packages --no-cache-dir matplotlib==3.8.2 pydicom==3.0.1 rtoml sigpy cupy-cuda12x
 
 # Cleanup files not required after installation
 RUN apt-get clean && \

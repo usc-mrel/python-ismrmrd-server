@@ -1,0 +1,3 @@
+docker/*.img
+docker/.tmp*
+*.h5

@@ -3,23 +3,16 @@ from scipy.io import loadmat
 import time
 from scipy.signal.windows import hann
 from scipy.fft import fft, fftshift, ifft, ifftshift
+import pathlib
 
-def apply_GIRF(gradients_nominal, dt, R, tRR=0):
+def apply_GIRF(gradients_nominal, dt, R, girf_file=None, tRR=0):
     # Handle "nasty" co-opting of R-variable to include field info.
     if isinstance(R, dict):
-        field_T = R['T']
         R = R['R']
-    else:
-        field_T = 0.55
 
-    # Load GIRF file based on field strength
-    if field_T == 1.4940:
-        # 1.5T Aera (NHLBI 2016)
-        girf_file = 'GIRF_20160501.mat'
-    elif field_T == 0.55:
-        # 0.55T Aera (NHLBI 2018)
-        girf_file = 'GIRF_20200221_Duyn_method_coil2.mat'
-        #girf_file = 'GIRF_20201014_Brodsky_method_coil16.mat'
+    # If no path is given assume our scanner for backwards compatibility.
+    if girf_file is None:
+        girf_file = str(pathlib.Path(__file__).parent / 'GIRF_20200221_Duyn_method_coil2.mat')
 
     try:
         girf_data = loadmat(girf_file)
