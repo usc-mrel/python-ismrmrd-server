@@ -6,4 +6,5 @@ numba==0.61.2
 sigpy
 pydicom       # used by dicom2mrd.py to parse DICOM data
 pynetdicom     # used by dicom2mrd.py to parse DICOM data
+pyfftw
 cupy-cuda12x # For GPU acceleration at EDITER processing.
