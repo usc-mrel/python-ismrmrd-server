@@ -1,0 +1,43 @@
+"metafile_paths" = ["seq_meta/"]
+
+[reconstruction]
+"apply_girf"        = true
+"arms_per_frame"    = 55
+"window_shift"      = 17
+"gpu_device"        = 0
+"coil_combine"      = "rssq" # Options: "rssq", "adaptive"
+"save_complex"      = false # Save complex float images, rather than scaled magnitude int images.
+"ignore_arms_per_frame" = false # When true, arms per frame and window shift are ignored and arms to grid will be interleaves parameter in the metadata. Useful for linear ordering.
+"remove_oversampling" = true # Remove oversampling from the data.
+
+[pilottone]
+"pt_freq" = 24e6 # Frequency of the pilot tone in Hz.
+"remove_pt" = true # Remove pilot tone from the data.
+"save_folder" = "waveforms/"
+"save_png" = true
+"save_svg" = true
+"save_mat" = true
+"save_raw" = true
+"save_navs" = true # Save extracted navigators.
+
+golay_filter_len = 81 # Golay filter length for initial denoising.
+
+[pilottone.respiratory]
+freq_start          = 0.05 # [Hz] Lower frequency limit for respiratory bandpass filter
+freq_stop           = 0.9 # [Hz] Upper frequency limit for respiratory bandpass filter
+corr_threshold      = 0.9 # Correlation threshold for respiratory coil selection
+initial_channel      = -1 # Initial guess for the respiratory coil selection
+separation_method = "sobi" # SOBI or PCA
+
+[pilottone.cardiac]
+freq_start          = 1 # [Hz] Lower frequency limit for cardiac bandpass filter
+freq_stop           = 20 # [Hz] Upper frequency limit for cardiac bandpass filter
+corr_threshold      = 0.7 # Correlation threshold for cardiac coil selection
+initial_channel     = 'Body_6:1:B22' # Initial guess for the cardiac coil selection
+separation_method = "sobi" # SOBI or PCA
+sign = 1   # When cardiac signal is not stable enough, sign detection fails. This will flip the signal in case cardiac signal is flipped.
+
+[pilottone.debug]
+selected_coils = [0,1]
+show_plots = false
+no_normalize = true
