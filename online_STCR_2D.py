@@ -16,17 +16,21 @@ from sigpy import fourier
 from sigpy.app import MaxEig
 from sigpy.mri.app import EspiritCalib
 
-from tcr_utils import online_STCR_ISTA_2_timed
+from tcr_utils import online_STCR_ISTA_2_timed, calculate_csm_walsh_gpu
 import GIRF
 import coils
 from einops import rearrange
 import connection
+
+from dmd_utils import dmd, dmd_filt
 
 # Folder for debug output files
 debugFolder = "/tmp/share/debug"
 
 
 def process(conn: connection.Connection, config, metadata):
+
+    end_iter = 0 # dummy define
 
     logging.disable(logging.DEBUG)
     
@@ -55,7 +59,9 @@ def process(conn: connection.Connection, config, metadata):
     
     # start = time.perf_counter()
     # get the k-space trajectory based on the metadata hash.
+    #traj_name = metadata.userParameters.userParameterString[1].value[:32] # Get the first 32 chars, because a bug sometimes causes this field to have /OSP added to the end.
     traj_name = metadata.userParameters.userParameterString[1].value[:32] # Get the first 32 chars, because a bug sometimes causes this field to have /OSP added to the end.
+
 
     # load the .mat file containing the trajectory
     # Search for the file in the metafile_paths
@@ -106,7 +112,7 @@ def process(conn: connection.Connection, config, metadata):
     ktraj = np.swapaxes(ktraj, 0, 1)
 
     msize = np.int16(10 * traj['param']['fov'][0,0][0,0] / traj['param']['spatial_resolution'][0,0][0,0])
-    msize = (np.int16(msize * 1.5) // 2) * 2
+    msize = (np.int16(msize * 2) // 2) * 2
 
     ktraj = 0.5 * (ktraj / kmax) * msize
 
@@ -134,6 +140,9 @@ def process(conn: connection.Connection, config, metadata):
     datas = []
     L = None
 
+    # buffers for dmd
+    dmd_buff = []
+
     arm_counter = 0
     rep_counter = 0
     past_slice = -1 
@@ -147,6 +156,10 @@ def process(conn: connection.Connection, config, metadata):
 
     arm: ismrmrd.Acquisition | ismrmrd.Waveform | None
     for arm in conn:
+
+        time_to_receive = time.perf_counter() - end_iter 
+        logging.debug("Time to receive data: %f ms.", time_to_receive*1000)
+
         if arm is None:
             break
         start_iter = time.perf_counter()
@@ -189,6 +202,7 @@ def process(conn: connection.Connection, config, metadata):
                     del frames[:len(frames)]
                     del arm_counters[:len(arm_counters)]
                     del datas[:len(datas)]
+                    #del dmd_buff[:len(dmd_buff)]
                 past_slice = current_slice
             elif mode == 'RT':
                 coil_map_bool = rep_counter == 0
@@ -214,7 +228,9 @@ def process(conn: connection.Connection, config, metadata):
                 if ((arm.idx.kspace_encode_step_1+1)%n_arm_fs == 0): 
                     xp = device.xp
                     with device:
+                        time_for_sens = time.perf_counter()
                         sens = sp.to_device(process_csm(frames), device=device)
+                        logging.debug("Elapsed time for coil map estimation: %f ms.", (time.perf_counter()-time_for_sens)*1e3)
                         S = sp.linop.Multiply(sens.shape, sens, conj=True)
                         R = sp.linop.Sum(sens.shape, [0])
                         What = sp.linop.Multiply([sens.shape[0], adata.shape[1]*n_arm_per_frame], xp.tile(xp.sqrt(w_gpu), [1, n_arm_per_frame]))
@@ -239,6 +255,7 @@ def process(conn: connection.Connection, config, metadata):
                 #if (((arm.idx.kspace_encode_step_1 + 1) % n_arm_per_frame) == 0):
                 if len(arm_counters) == n_arm_per_frame:
                     with device:
+                        prep_time_start = time.perf_counter()
                         # online STCR
                         xp = device.xp
                         trajectory_frame = sp.to_device(coord_gpu[sp.to_device(arm_counters,device=device), :, :], device=device)
@@ -251,6 +268,9 @@ def process(conn: connection.Connection, config, metadata):
                         data_frame = What.H * data_frame 
                         xn = Aframe.H * data_frame
 
+                        prep_time_end = time.perf_counter()
+                        logging.debug("Elapsed time for preparation: %f ms.", (prep_time_end-prep_time_start)*1e3)
+
                         if alg_type == "cg":
                             cg_alg = sp.alg.ConjugateGradient(Aframe.H*Aframe, xn, xn_1, max_iter=3)
                             while not cg_alg.done():
@@ -258,9 +278,11 @@ def process(conn: connection.Connection, config, metadata):
                             xn = cg_alg.x
                         elif alg_type == "stcr":
                             if L is None:
+                                lipschitz_start = time.perf_counter()
                                 L = MaxEig(Aframe.N, max_iter=40, dtype=xn.dtype, device=device).run()
+                                logging.debug("Time for lipschitz constant: %f ms.", (time.perf_counter()-lipschitz_start)*1e3)
                             del_0 = xp.zeros(xn.shape, dtype=xp.complex128)
-                            time_recon = metadata.sequenceParameters.TR[0] * n_arm_per_frame
+                            time_recon = metadata.sequenceParameters.TR[0] * n_arm_per_frame * 0.65
 
                             max_image = xp.abs(xn).max()
                             lamt = lambdat * max_image 
@@ -268,6 +290,21 @@ def process(conn: connection.Connection, config, metadata):
 
                             del_0 = online_STCR_ISTA_2_timed(Aframe, G, xn_1, xn, lamt, lams, 1/L, mu=0.2, yn=data_frame, time_recon=time_recon, deln=del_0) #, deln=del_0)
                             xn = xn_1 + del_0
+                        elif alg_type == "dmd":
+                            # timing just the dmd
+                            start_dmd = time.perf_counter()
+                            f_threshold = 3 # TODO: make this configurable
+                            N_frames_bin = 30 
+                            dt_dmd = metadata.sequenceParameters.TR[0] * n_arm_per_frame * 1e-3 
+                            dmd_buff.append(xn)
+                            if len(dmd_buff) >= N_frames_bin:
+                                # TODO: it is proably more efficeint to create the buffer and simply index it (circular)
+                                xn = dmd_filt(xp.array(dmd_buff).transpose((1,2,0)), dt_dmd, f_threshold)[:,:,-1]
+                                logging.debug("Frame Finished")
+                            # if the lenght of dmd_buff is more than N_frames_bin, remove the first element
+                            if len(dmd_buff) > N_frames_bin:
+                                dmd_buff.pop(0)
+                            end_dmd = time.perf_counter()
                         else:
                             pass
                         xn_1 = xp.copy(xn)
@@ -275,24 +312,30 @@ def process(conn: connection.Connection, config, metadata):
                     image = process_group(arm, xn, device, rep_counter, cfg, metadata, n_slices=n_slices, slice_shift=slice_shift)
                     end = time.perf_counter()
 
-                    logging.debug("Elapsed time for frame processing: %f secs.", end-start)
+                    logging.debug("Elapsed time for frame processing: %f ms.", (end-start)*1000)
                     del frames[:n_arm_per_frame]
                     del datas[:n_arm_per_frame]
                     del arm_counters[:n_arm_per_frame]
 
                     logging.debug("Sending image to client:\n%s", image)
+
+                    # send time
+                    send_time_start = time.perf_counter()
                     conn.send_image(image)
-
+                    send_time_end = time.perf_counter()
+                    logging.debug("Elapsed time for sending image: %f ms.", (send_time_end-send_time_start)*1000)
+                    
                     rep_counter += 1
-
             end_iter = time.perf_counter()
-            logging.debug("Elapsed time for per iteration: %f secs.", end_iter-start_iter)
+            logging.debug("Elapsed time for per recon frame: %f ms.", (end_iter-start_iter)*1000)
         elif type(arm) is ismrmrd.Waveform:
             wf_list.append(arm)
 
     # Send waveforms back to save them with images
+    """
     for wf in wf_list:
         conn.send_waveform(wf)
+    """
 
     conn.send_close()
     logging.debug('Reconstruction is finished.')
@@ -307,7 +350,9 @@ def process_csm(frames):
         for g in frames:
             data += sp.to_device(g, device=device)
         #csm_est=EspiritCalib(sp.fft(data,axes=[1,2]), max_iter=60, device=device).run()
-        (csm_est, rho) = coils.calculate_csm_inati_iter(data.get(), smoothing=10)
+        #(csm_est, rho) = coils.calculate_csm_inati_iter(data.get(), smoothing=32)
+        (csm_est, rho) = calculate_csm_walsh_gpu(data, smoothing=20)
+        csm_est = xp.squeeze(csm_est)
 
     return csm_est
 

@@ -1,8 +1,9 @@
 
-import ismrmrd as mrd
 import numpy as np
 import cupy as cp
 import time
+import logging
+import cupyx.scipy.ndimage as cpsp
 
 
 def extract_middle_slices(array, n, dim, shift=0):
@@ -431,7 +432,7 @@ def online_STCR_ISTA_2_timed(E, G, xn_1, Ahyn, lambdat, lambdas, step_size, mu=1
         n_i = n_i + 1
         if elapsed*1000 > time_recon:
             running = False
-    print(n_i)
+    logging.debug(f"niter {n_i}, time elapsed {elapsed*1000} ms")
     if cost_fn is not None:
         return [deln, costs]
     return deln
@@ -516,3 +517,103 @@ def analyticaldcf(trajectory, adc_dwell=1e-6, ns=1):
     w[-int(ns//2):] = w[-int(ns//2)] # need this to correct weird jump at the end and improve SNR
     w = w/np.max(w)
     return w
+
+def smooth(img, box=5, use_cpu=False):
+    '''Smooths coil images
+
+    :param img: Input complex images, ``[y, x] or [z, y, x]``
+    :param box: Smoothing block size (default ``5``)
+
+    :returns simg: Smoothed complex image ``[y,x] or [z,y,x]``
+    '''
+    if use_cpu:
+        t_real = np.zeros(img.shape)
+        t_imag = np.zeros(img.shape)
+
+        ndimage.filters.uniform_filter(img.real,size=box,output=t_real)
+        ndimage.filters.uniform_filter(img.imag,size=box,output=t_imag)
+    else:
+        img_cp = cp.array(img)
+        t_real = cp.zeros(img.shape)
+        t_imag = cp.zeros(img.shape)
+        cpsp.uniform_filter(img_cp.real,size=box,output=t_real)
+        cpsp.uniform_filter(img_cp.imag,size=box,output=t_imag)
+
+    simg = t_real + 1j*t_imag
+    
+    return simg
+    
+
+def calculate_csm_walsh_gpu(img, smoothing=5, niter=3):
+    '''Calculates the coil sensitivities for 2D data using an iterative version of the Walsh method
+
+    :param img: Input images, ``[coil, y, x]``
+    :param smoothing: Smoothing block size (default ``5``)
+    :parma niter: Number of iterations for the eigenvector power method (default ``3``)
+
+    :returns csm: Relative coil sensitivity maps, ``[coil, y, x]``
+    :returns rho: Total power in the estimated coils maps, ``[y, x]``
+    '''
+    odim = img.ndim
+    if img.ndim == 3:
+        img = img[:,np.newaxis,:,:] # add a z dim
+    #assert img.ndim == 3, "Coil sensitivity map must have exactly 3 dimensions"
+    img = cp.array(img)
+    ncoils = img.shape[0]
+    nz = img.shape[1]
+    ny = img.shape[2]
+    nx = img.shape[3]
+    
+    start_time = time.time()
+
+    # Compute the sample covariance pointwise
+    Rs = cp.zeros((ncoils,ncoils,nz,ny,nx),dtype=img.dtype)
+    for p in range(ncoils):
+        for q in range(ncoils):
+            Rs[p,q,:,:,:] = img[p,:,:,:] * cp.conj(img[q,:,:,:])
+            
+    # Smooth the covariance
+    for p in range(ncoils):
+        for q in range(ncoils):
+            Rs[p,q] = smooth(Rs[p,q,:,:,:], smoothing)
+    
+    # At each point in the image, find the dominant eigenvector
+    # and corresponding eigenvalue of the signal covariance
+    # matrix using the power method
+    rho = cp.zeros((nz, ny, nx))
+    csm = cp.zeros((ncoils, nz, ny, nx),dtype=img.dtype)
+    v = cp.sum(Rs,axis=0)
+    lam = cp.linalg.norm(v,axis=0)
+    vo = v/lam
+    #for z in range(nz):
+    if(odim==3):
+        vo = vo.squeeze()
+        Rs = Rs.squeeze()
+        for x in range(nx):
+            v = vo[:,:,x]
+            
+            for iter in range(niter):
+                v = cp.transpose(cp.matmul(cp.transpose(Rs[:,:,:,x],[2,0,1]),v),[1,0,2])
+                lam = cp.linalg.norm(v,axis=0)
+                v = v/lam
+                v = cp.diagonal(v,axis1=1,axis2=2)
+            
+            rho[:,:,x] = cp.diagonal(lam)
+            csm[:,0,:,x] = v
+
+    else:
+        for y in range(ny):
+            for x in range(nx):
+                v = vo[:,:,y,x]
+                for iter in range(niter):
+                    v = cp.transpose(cp.matmul(cp.transpose(Rs[:,:,:,y,x],[2,0,1]),v),[1,0,2])
+                    lam = cp.linalg.norm(v,axis=0)
+                    v = v/lam
+                    v = cp.diagonal(v,axis1=1,axis2=2)
+                
+                rho[:,y,x] = cp.diagonal(lam)
+                csm[:,:,y,x] = v
+            
+    del v,lam,Rs
+    
+    return (cp.asnumpy(csm), cp.asnumpy(rho))
