@@ -202,6 +202,8 @@ class Connection:
         config = self.read(length)
         config = config.split(b'\x00',1)[0].decode('utf-8')  # Strip off null teminator
 
+        logging.debug("    " + config)
+
         if self.savedata is True:
             if self.dset is None:
                 self.create_save_file()
