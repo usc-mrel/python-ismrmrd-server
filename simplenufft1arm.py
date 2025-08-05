@@ -51,7 +51,13 @@ def process(conn: connection.Connection, config, metadata):
     
     # start = time.perf_counter()
     # get the k-space trajectory based on the metadata hash.
-    traj_name = metadata.userParameters.userParameterString[1].value[:32] # Get first 32 chars, because a bug sometimes causes this field to have /OSP added to the end.
+    for str_param in metadata.userParameters.userParameterString:
+        if str_param.name == "tSequenceVariant":
+            traj_name = str_param.value[:32] # Get first 32 chars, because a bug sometimes causes this field to have /OSP added to the end.
+            break
+    else:
+        logging.error("Sequence hash is not found in metadata user parameters.")
+        return
 
     # load the .mat file containing the trajectory
     # Search for the file in the metafile_paths
