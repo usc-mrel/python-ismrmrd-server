@@ -10,6 +10,8 @@ import os
 import rtoml
 import connection
 import pathlib
+import threading
+import collections
 
 from scipy.io import loadmat
 import sigpy as sp
@@ -20,8 +22,26 @@ import coils
 debugFolder = "/tmp/share/debug"
 
 
+def data_acquisition_thread(conn: connection.Connection, data_deque: collections.deque, stop_event: threading.Event):
+    """Thread function to acquire data from the connection and put it in the deque."""
+    
+    arm: ismrmrd.Acquisition | ismrmrd.Waveform | None
+    for arm in conn:
+        if arm is None or stop_event.is_set():
+            logging.info("Acquisition thread stopped or no more data.")
+            break
+
+        if type(arm) is ismrmrd.Acquisition:
+            data_deque.append(('acquisition', arm))
+        elif type(arm) is ismrmrd.Waveform:
+            data_deque.append(('waveform', arm))
+    
+    # Signal end of data
+    data_deque.append(('end', None))
+
+
 def process(conn: connection.Connection, config, metadata):
-    logging.disable(logging.DEBUG)
+    logging.disable(logging.NOTSET)
     
     logging.info("Config: \n%s", config)
     # logging.info("Metadata: \n%s", metadata)
@@ -133,78 +153,123 @@ def process(conn: connection.Connection, config, metadata):
     coord_gpu = sp.to_device(ktraj, device=device)
     w_gpu = sp.to_device(w, device=device)
 
-    sens = []
+    sens = None
     wf_list = []
 
-    arm: ismrmrd.Acquisition | ismrmrd.Waveform | None
-    for arm in conn:
-        if arm is None:
-            break
-        start_iter = time.perf_counter()
+    # Create deque and threading objects
+    data_deque = collections.deque()
+    stop_event = threading.Event()
+    
+    # Start data acquisition thread
+    acquisition_thread = threading.Thread(
+        target=data_acquisition_thread,
+        args=(conn, data_deque, stop_event)
+    )
+    acquisition_thread.start()
+
+    scan_counter_tracker = 0
+    # Main processing loop
+    while True:
+        # Try to get data from deque
+        data_type = None
+        arm = None
         
-        if type(arm) is ismrmrd.Acquisition:
-            # First arm came, if GIRF is requested, correct trajectories and reupload.
-            if (arm.scan_counter == 1) and APPLY_GIRF:
-                r_GCS2RCS = np.array(  [[0,    1,   0],  # [PE]   [0 1 0] * [r]
-                                        [1,    0,   0],  # [RO] = [1 0 0] * [c]
-                                        [0,    0,   1]]) # [SL]   [0 0 1] * [s]
-                r_GCS2PCS = np.array([arm.phase_dir, -np.array(arm.read_dir), arm.slice_dir])
-                r_GCS2DCS = r_PCS2DCS.dot(r_GCS2PCS)
-                sR['R'] = r_GCS2DCS.dot(r_GCS2RCS)
-                k_pred, _ = GIRF.apply_GIRF(g_nom, dt, sR, tRR=tRR)
-                # k_pred = np.flip(k_pred[:,:,0:2], axis=2) # Drop the z
-                k_pred = k_pred[:,:,0:2] # Drop the z
-
-                kmax = np.max(np.abs(k_pred[:,:,0] + 1j * k_pred[:,:,1]))
-                k_pred = np.swapaxes(k_pred, 0, 1)
-                k_pred = 0.5 * (k_pred / kmax) * msize
-                coord_gpu = sp.to_device(k_pred, device=device) # Replace  the original k-space
-
-            if (arm.scan_counter == 1) and (arm.data.shape[1]-pre_discard/2) == coord_gpu.shape[1]/2:
-                # Check if the OS is removed. Should only happen with offline recon.
-                coord_gpu = coord_gpu[:,::2,:]
-                w_gpu = w_gpu[:,::2]
-                pre_discard = int(pre_discard//2)
-                
-
-            startarm = time.perf_counter()
-            adata = sp.to_device(arm.data[:,pre_discard:], device=device)
-
-            with device:
-                frames.append(fourier.nufft_adjoint(
-                        adata*w_gpu,
-                        coord_gpu[arm_counter,:,:],
-                        (nchannel, msize, msize)))
-                
-            endarm = time.perf_counter()
-            logging.debug("Elapsed time for arm %d NUFFT: %f ms.", arm_counter, (endarm-startarm)*1e3)
-
-            arm_counter += 1
-            if arm_counter == n_unique_angles:
-                arm_counter = 0
-
-            if ((arm.scan_counter) % window_shift) == 0 and ((arm.scan_counter) >= n_arm_per_frame):
-                start = time.perf_counter()
-                if coil_combine == "adaptive" and rep_counter == 0:
-                    sens = sp.to_device(process_csm(frames), device=device)
-
-                if save_complex:
-                    image = process_frame_complex(arm, frames, sens, device, rep_counter, cfg, metadata)
-                else:
-                    image = process_group(arm, frames, sens, device, rep_counter, cfg, metadata)
-                end = time.perf_counter()
-
-                logging.debug("Elapsed time for frame processing: %f secs.", end-start)
-                del frames[:window_shift]
-                logging.debug("Sending image to client:\n%s", image)
-                conn.send_image(image)
-
-                rep_counter += 1
-
-            end_iter = time.perf_counter()
-            logging.debug("Elapsed time for per iteration: %f secs.", end_iter-start_iter)
-        elif type(arm) is ismrmrd.Waveform:
+        if data_deque:
+            data_type, arm = data_deque.popleft()
+        
+        if data_type is None:
+            # No data available, check if acquisition thread is still alive
+            if not acquisition_thread.is_alive():
+                break
+            time.sleep(0.001)  # Small sleep to avoid busy waiting
+            continue
+            
+        if data_type == 'end':
+            break
+        elif data_type == 'waveform':
+            # Accumulate waveforms to send at the end
             wf_list.append(arm)
+            continue
+        elif data_type != 'acquisition':
+            continue
+            
+        # At this point, we know arm is an Acquisition object
+        assert arm is not None
+            
+        start_iter = time.perf_counter()
+
+        if arm.scan_counter % 1000 == 0:
+            logging.info("Processing acquisition %d", arm.scan_counter)
+
+        if arm.scan_counter == (scan_counter_tracker+1):
+            scan_counter_tracker = arm.scan_counter
+        else:
+            logging.warning("Scan counter mismatch: expected %d, got %d", scan_counter_tracker+1, arm.scan_counter)
+            scan_counter_tracker = arm.scan_counter
+        
+        # First arm came, if GIRF is requested, correct trajectories and reupload.
+        if (arm.scan_counter == 1) and APPLY_GIRF:
+            r_GCS2RCS = np.array(  [[0,    1,   0],  # [PE]   [0 1 0] * [r]
+                                    [1,    0,   0],  # [RO] = [1 0 0] * [c]
+                                    [0,    0,   1]]) # [SL]   [0 0 1] * [s]
+            r_GCS2PCS = np.array([arm.phase_dir, -np.array(arm.read_dir), arm.slice_dir])
+            r_GCS2DCS = r_PCS2DCS.dot(r_GCS2PCS)
+            sR['R'] = r_GCS2DCS.dot(r_GCS2RCS)
+            k_pred, _ = GIRF.apply_GIRF(g_nom, dt, sR, tRR=tRR)
+            # k_pred = np.flip(k_pred[:,:,0:2], axis=2) # Drop the z
+            k_pred = k_pred[:,:,0:2] # Drop the z
+
+            kmax = np.max(np.abs(k_pred[:,:,0] + 1j * k_pred[:,:,1]))
+            k_pred = np.swapaxes(k_pred, 0, 1)
+            k_pred = 0.5 * (k_pred / kmax) * msize
+            coord_gpu = sp.to_device(k_pred, device=device) # Replace  the original k-space
+
+        if (arm.scan_counter == 1) and (arm.data.shape[1]-pre_discard/2) == coord_gpu.shape[1]/2:
+            # Check if the OS is removed. Should only happen with offline recon.
+            coord_gpu = coord_gpu[:,::2,:]
+            w_gpu = w_gpu[:,::2]
+            pre_discard = int(pre_discard//2)
+            
+
+        startarm = time.perf_counter()
+        adata = sp.to_device(arm.data[:,pre_discard:], device=device)
+
+        with device:
+            frames.append(fourier.nufft_adjoint(
+                    adata*w_gpu,
+                    coord_gpu[arm_counter,:,:],
+                    (nchannel, msize, msize)))
+            
+        endarm = time.perf_counter()
+        logging.debug("Elapsed time for arm %d NUFFT: %f ms.", arm_counter, (endarm-startarm)*1e3)
+
+        arm_counter += 1
+        if arm_counter == n_unique_angles:
+            arm_counter = 0
+
+        if ((arm.scan_counter) % window_shift) == 0 and ((arm.scan_counter) >= n_arm_per_frame):
+            start = time.perf_counter()
+            if coil_combine == "adaptive" and rep_counter == 0:
+                sens = sp.to_device(process_csm(frames), device=device)
+
+            if save_complex:
+                image = process_frame_complex(arm, frames, sens, device, rep_counter, cfg, metadata)
+            else:
+                image = process_group(arm, frames, sens, device, rep_counter, cfg, metadata)
+            end = time.perf_counter()
+
+            logging.debug("Elapsed time for frame processing: %f secs.", end-start)
+            del frames[:window_shift]
+            logging.debug("Sending image to client:\n%s", image)
+            conn.send_image(image)
+
+            rep_counter += 1
+
+        end_iter = time.perf_counter()
+        logging.debug("Elapsed time for per iteration: %f secs.", end_iter-start_iter)
+    
+    # Wait for acquisition thread to finish
+    acquisition_thread.join()
 
     # Send waveforms back to save them with images
     for wf in wf_list:
@@ -223,14 +288,14 @@ def process_csm(frames):
     return csm_est
 
 
-def process_group(group, frames: list, sens: npt.ArrayLike, device, rep, config, metadata):
+def process_group(group, frames: list, sens: npt.NDArray | None, device, rep, config, metadata):
     xp = device.xp
     with device:
         data = xp.zeros(frames[0].shape, dtype=np.complex128)
         for g in frames:
             data += g
 
-        if sens.__len__() == 0:
+        if sens is None:
             # Sum of squares coil combination
             data = np.abs(np.flip(data, axis=(1,)))
             data = np.square(data)
@@ -293,14 +358,14 @@ def process_group(group, frames: list, sens: npt.ArrayLike, device, rep, config,
     return image
 
 
-def process_frame_complex(group, frames: list, sens: npt.ArrayLike, device, rep, config, metadata):
+def process_frame_complex(group, frames: list, sens: npt.NDArray | None, device, rep, config, metadata):
     xp = device.xp
     with device:
         data = xp.zeros(frames[0].shape, dtype=np.complex128)
         for g in frames:
             data += g
 
-        if sens.__len__() == 0:
+        if sens is None:
             logging.error("No coil sensitivity maps found. Cannot perform coil combination.")
             # Sum of squares coil combination
             data = np.abs(np.flip(data, axis=(1,)))

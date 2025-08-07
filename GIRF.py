@@ -91,8 +91,7 @@ def apply_GIRF(gradients_nominal, dt, R, girf_file=None, tRR=0):
             H = G[index_range1[-1]] * hanning400
             G[index_range1[-1] + np.arange(1, len(H)//2 + 1)] = H[len(H)//2:]
 
-            # I = np.conj(np.fft.fftshift(np.fft.ifft(np.fft.ifftshift(G))))  # I am missing something and the grads are flipped without conj.
-            I = fftshift(fft(ifftshift(G))) # Mysery solved.
+            I = fftshift(fft(ifftshift(G))) 
 
             GIRF1 = np.zeros(L1, dtype=np.complex64)
             
