@@ -1,4 +1,4 @@
-"metafile_paths" = ["/mnt/LIN_DATA/workspace/python-ismrmrd-server-mrel/seq_meta"]
+"metafile_paths" = ["/opt/code/python-ismrmrd-server/seq_meta"]
 "girf_file" = "GIRF/GIRF_20200221_Duyn_method_coil2.mat"
 
 [reconstruction]
