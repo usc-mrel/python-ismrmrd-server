@@ -1,4 +1,5 @@
 "metafile_paths" = ["seq_meta/"]
+"girf_file" = "GIRF/GIRF_20200221_Duyn_method_coil2.mat"
 
 [reconstruction]
 "apply_girf"        = true

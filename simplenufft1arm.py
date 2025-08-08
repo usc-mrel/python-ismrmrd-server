@@ -1,47 +1,31 @@
 
-import ismrmrd
+import collections
 import logging
-import numpy as np
-import numpy.typing as npt
-import ctypes
-import mrdhelper
-import time
-import os
-import rtoml
-import connection
 import pathlib
 import threading
-import collections
+import time
 
-from scipy.io import loadmat
+import numpy as np
+import rtoml
 import sigpy as sp
 from sigpy import fourier
+
+import connection
 import GIRF
-import coils
+from reconutils import (
+    data_acquisition_thread,
+    load_trajectory,
+    process_csm,
+    process_frame_complex,
+    process_group,
+)
+
 # Folder for debug output files
 debugFolder = "/tmp/share/debug"
 
 
-def data_acquisition_thread(conn: connection.Connection, data_deque: collections.deque, stop_event: threading.Event):
-    """Thread function to acquire data from the connection and put it in the deque."""
-    
-    arm: ismrmrd.Acquisition | ismrmrd.Waveform | None
-    for arm in conn:
-        if arm is None or stop_event.is_set():
-            logging.info("Acquisition thread stopped or no more data.")
-            break
-
-        if type(arm) is ismrmrd.Acquisition:
-            data_deque.append(('acquisition', arm))
-        elif type(arm) is ismrmrd.Waveform:
-            data_deque.append(('waveform', arm))
-    
-    # Signal end of data
-    data_deque.append(('end', None))
-
-
 def process(conn: connection.Connection, config, metadata):
-    logging.disable(logging.NOTSET)
+    logging.disable(logging.DEBUG)
     
     logging.info("Config: \n%s", config)
     # logging.info("Metadata: \n%s", metadata)
@@ -68,27 +52,10 @@ def process(conn: connection.Connection, config, metadata):
                  Coil Combine: {coil_combine}
                  Save Complex: {save_complex}
                  =================================================================''')
-    
-    # start = time.perf_counter()
-    # get the k-space trajectory based on the metadata hash.
-    for str_param in metadata.userParameters.userParameterString:
-        if str_param.name == "tSequenceVariant":
-            traj_name = str_param.value[:32] # Get first 32 chars, because a bug sometimes causes this field to have /OSP added to the end.
-            break
-    else:
-        logging.error("Sequence hash is not found in metadata user parameters.")
-        return
 
-    # load the .mat file containing the trajectory
-    # Search for the file in the metafile_paths
-    for path in metafile_paths:
-        metafile_fullpath = os.path.join(path, traj_name + ".mat")
-        if os.path.isfile(metafile_fullpath):
-            logging.info(f"Loading metafile {traj_name} from {path}...")
-            traj = loadmat(metafile_fullpath)
-            break
-    else:
-        logging.error(f"Trajectory file {traj_name}.mat not found in specified paths.")
+    traj = load_trajectory(metadata, metafile_paths)
+    if traj is None:
+        logging.error("Failed to load trajectory.")
         return
 
     if ignore_arms_per_frame:
@@ -215,8 +182,7 @@ def process(conn: connection.Connection, config, metadata):
             r_GCS2PCS = np.array([arm.phase_dir, -np.array(arm.read_dir), arm.slice_dir])
             r_GCS2DCS = r_PCS2DCS.dot(r_GCS2PCS)
             sR['R'] = r_GCS2DCS.dot(r_GCS2RCS)
-            k_pred, _ = GIRF.apply_GIRF(g_nom, dt, sR, tRR=tRR)
-            # k_pred = np.flip(k_pred[:,:,0:2], axis=2) # Drop the z
+            k_pred, _ = GIRF.apply_GIRF(g_nom, dt, sR, tRR=tRR, girf_file=cfg['girf_file'])
             k_pred = k_pred[:,:,0:2] # Drop the z
 
             kmax = np.max(np.abs(k_pred[:,:,0] + 1j * k_pred[:,:,1]))
@@ -278,140 +244,5 @@ def process(conn: connection.Connection, config, metadata):
     conn.send_close()
     logging.debug('Reconstruction is finished.')
 
-
-def process_csm(frames):
-    data = np.zeros(frames[0].shape, dtype=np.complex128)
-    for g in frames:
-        data += sp.to_device(g)
-    (csm_est, rho) = coils.calculate_csm_inati_iter(data, smoothing=32)
-
-    return csm_est
-
-
-def process_group(group, frames: list, sens: npt.NDArray | None, device, rep, config, metadata):
-    xp = device.xp
-    with device:
-        data = xp.zeros(frames[0].shape, dtype=np.complex128)
-        for g in frames:
-            data += g
-
-        if sens is None:
-            # Sum of squares coil combination
-            data = np.abs(np.flip(data, axis=(1,)))
-            data = np.square(data)
-            data = np.sum(data, axis=0)
-            data = np.sqrt(data)
-        else:
-            # Coil combine
-            data = np.flip(np.abs(np.sum(np.conj(sens) * data, axis=0)), axis=(0,))
-            
-        # Determine max value (12 or 16 bit)
-        BitsStored = 12
-        if (mrdhelper.get_userParameterLong_value(metadata, "BitsStored") is not None):
-            BitsStored = mrdhelper.get_userParameterLong_value(metadata, "BitsStored")
-        maxVal = 2**BitsStored - 1
-
-        # Normalize and convert to int16
-        dscale = maxVal/data.max()
-        data *= dscale
-        data = np.around(data)
-        data = data.astype(np.int16)
-
-    data = sp.to_device(data)
-
-    # Format as ISMRMRD image data
-    # data has shape [RO PE], i.e. [x y].
-    # from_array() should be called with 'transpose=False' to avoid warnings, and when called
-    # with this option, can take input as: [cha z y x], [z y x], or [y x]
-    image = ismrmrd.Image.from_array(data.transpose(), acquisition=group, transpose=False)
-
-    image.image_index = rep
-    image.repetition = rep
-
-    # Set field of view
-    image.field_of_view = (ctypes.c_float(metadata.encoding[0].reconSpace.fieldOfView_mm.x), 
-                            ctypes.c_float(metadata.encoding[0].reconSpace.fieldOfView_mm.y), 
-                            ctypes.c_float(metadata.encoding[0].reconSpace.fieldOfView_mm.z))
-
-    # Set ISMRMRD Meta Attributes
-    meta = ismrmrd.Meta({'DataRole':               'Image',
-                         'ImageProcessingHistory': ['FIRE', 'PYTHON', 'simplenufft1arm'],
-                         'WindowCenter':           str((maxVal+1)/2),
-                         'WindowWidth':            str((maxVal+1)),
-                         'NumArmsPerFrame':        str(config['reconstruction']['arms_per_frame']),
-                         'GriddingWindowShift':    str(config['reconstruction']['window_shift']), 
-                         'ImageScaleFactor':       str(dscale)
-                         })
-
-    # Add image orientation directions to MetaAttributes if not already present
-    if meta.get('ImageRowDir') is None:
-        meta['ImageRowDir'] = ["{:.18f}".format(image.getHead().read_dir[0]), "{:.18f}".format(image.getHead().read_dir[1]), "{:.18f}".format(image.getHead().read_dir[2])]
-
-    if meta.get('ImageColumnDir') is None:
-        meta['ImageColumnDir'] = ["{:.18f}".format(image.getHead().phase_dir[0]), "{:.18f}".format(image.getHead().phase_dir[1]), "{:.18f}".format(image.getHead().phase_dir[2])]
-
-    xml = meta.serialize()
-    logging.debug("Image MetaAttributes: %s", xml)
-    logging.debug("Image data has %d elements", image.data.size)
-
-    image.attribute_string = xml
-    return image
-
-
-def process_frame_complex(group, frames: list, sens: npt.NDArray | None, device, rep, config, metadata):
-    xp = device.xp
-    with device:
-        data = xp.zeros(frames[0].shape, dtype=np.complex128)
-        for g in frames:
-            data += g
-
-        if sens is None:
-            logging.error("No coil sensitivity maps found. Cannot perform coil combination.")
-            # Sum of squares coil combination
-            data = np.abs(np.flip(data, axis=(1,)))
-            data = np.square(data)
-            data = np.sum(data, axis=0)
-            data = np.sqrt(data)
-        else:
-            # Coil combine
-            data = np.flip(np.sum(np.conj(sens) * data, axis=0), axis=(0,))
-
-    data = sp.to_device(data)
-
-    # Format as ISMRMRD image data
-    # data has shape [RO PE], i.e. [x y].
-    # from_array() should be called with 'transpose=False' to avoid warnings, and when called
-    # with this option, can take input as: [cha z y x], [z y x], or [y x]
-    image = ismrmrd.Image.from_array(data.transpose(), acquisition=group, transpose=False)
-
-    image.image_index = rep
-    image.repetition = rep
-
-    # Set field of view
-    image.field_of_view = (ctypes.c_float(metadata.encoding[0].reconSpace.fieldOfView_mm.x), 
-                            ctypes.c_float(metadata.encoding[0].reconSpace.fieldOfView_mm.y), 
-                            ctypes.c_float(metadata.encoding[0].reconSpace.fieldOfView_mm.z))
-
-    # Set ISMRMRD Meta Attributes
-    meta = ismrmrd.Meta({'DataRole':               'Image',
-                         'ImageProcessingHistory': ['FIRE', 'PYTHON', 'simplenufft1arm'],
-                         'WindowCenter':           str((data.max()+1)/2),
-                         'WindowWidth':            str((data.max()+1)),
-                         'NumArmsPerFrame':        str(config['reconstruction']['arms_per_frame']),
-                         'GriddingWindowShift':    str(config['reconstruction']['window_shift'])})
-
-    # Add image orientation directions to MetaAttributes if not already present
-    if meta.get('ImageRowDir') is None:
-        meta['ImageRowDir'] = ["{:.18f}".format(image.getHead().read_dir[0]), "{:.18f}".format(image.getHead().read_dir[1]), "{:.18f}".format(image.getHead().read_dir[2])]
-
-    if meta.get('ImageColumnDir') is None:
-        meta['ImageColumnDir'] = ["{:.18f}".format(image.getHead().phase_dir[0]), "{:.18f}".format(image.getHead().phase_dir[1]), "{:.18f}".format(image.getHead().phase_dir[2])]
-
-    xml = meta.serialize()
-    logging.debug("Image MetaAttributes: %s", xml)
-    logging.debug("Image data has %d elements", image.data.size)
-
-    image.attribute_string = xml
-    return image
 
 
