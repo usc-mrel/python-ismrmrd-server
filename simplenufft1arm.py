@@ -5,6 +5,7 @@ import pathlib
 import threading
 import time
 
+import ismrmrd
 import numpy as np
 import rtoml
 import sigpy as sp
@@ -135,29 +136,29 @@ def process(conn: connection.Connection, config, metadata):
     acquisition_thread.start()
 
     scan_counter_tracker = 0
+    arm: ismrmrd.Acquisition | ismrmrd.Waveform | None
     # Main processing loop
     while True:
         # Try to get data from deque
-        data_type = None
         arm = None
         
         if data_deque:
-            data_type, arm = data_deque.popleft()
-        
-        if data_type is None:
+            arm = data_deque.popleft()
+
+        if arm is None:
             # No data available, check if acquisition thread is still alive
             if not acquisition_thread.is_alive():
                 break
-            time.sleep(0.001)  # Small sleep to avoid busy waiting
+            # time.sleep(0.001)  # Small sleep to avoid busy waiting
             continue
             
-        if data_type == 'end':
-            break
-        elif data_type == 'waveform':
+        # if data_type == 'end':
+        #     break
+        elif type(arm) is ismrmrd.Waveform:
             # Accumulate waveforms to send at the end
             wf_list.append(arm)
             continue
-        elif data_type != 'acquisition':
+        elif type(arm) is not ismrmrd.Acquisition:
             continue
             
         # At this point, we know arm is an Acquisition object

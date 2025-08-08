@@ -18,17 +18,12 @@ def data_acquisition_thread(conn: connection.Connection, data_deque: collections
     arm: ismrmrd.Acquisition | ismrmrd.Waveform | None
     for arm in conn:
         if arm is None or stop_event.is_set():
+            data_deque.append(None)
             logging.info("Acquisition thread has stopped.")
             break
 
-        if type(arm) is ismrmrd.Acquisition:
-            data_deque.append(('acquisition', arm))
-        elif type(arm) is ismrmrd.Waveform:
-            data_deque.append(('waveform', arm))
+        data_deque.append(arm)
     
-    # Signal end of data
-    data_deque.append(('end', None))
-
 def process_csm(frames):
     data = np.zeros(frames[0].shape, dtype=np.complex128)
     for g in frames:
