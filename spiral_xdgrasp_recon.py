@@ -7,12 +7,11 @@ import numpy as np
 import numpy.typing as npt
 import ctypes
 
-import rtoml._rtoml
 import mrdhelper
 import time
 
 from scipy.io import loadmat
-import GIRF
+import GIRF.GIRF as GIRF
 import rtoml
 import math
 import constants

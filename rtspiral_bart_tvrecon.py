@@ -11,7 +11,7 @@ import time
 
 from scipy.io import loadmat
 
-import GIRF
+import GIRF.GIRF as GIRF
 import rtoml
 
 # Folder for debug output files

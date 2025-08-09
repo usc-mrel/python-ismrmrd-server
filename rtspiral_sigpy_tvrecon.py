@@ -1,24 +1,17 @@
 
 import ismrmrd
-# import os
-# import itertools
 import logging
 import numpy as np
-# import numpy.fft as fft
 import ctypes
 import mrdhelper
-# from datetime import datetime
 import time
 import json
 
 from scipy.io import loadmat
-# from sigpy.linop import NUFFT
-from scipy.ndimage import rotate
 import sigpy as sp
-from sigpy import fourier
 from sigpy import mri
 # import cupy as cp
-import GIRF
+import GIRF.GIRF as GIRF
 import tvrecon
 # Folder for debug output files
 debugFolder = "/tmp/share/debug"
