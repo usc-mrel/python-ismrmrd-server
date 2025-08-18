@@ -152,8 +152,6 @@ def process(conn: connection.Connection, config, metadata):
             # time.sleep(0.001)  # Small sleep to avoid busy waiting
             continue
             
-        # if data_type == 'end':
-        #     break
         elif type(arm) is ismrmrd.Waveform:
             # Accumulate waveforms to send at the end
             wf_list.append(arm)

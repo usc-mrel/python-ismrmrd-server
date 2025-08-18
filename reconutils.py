@@ -11,6 +11,7 @@ import ctypes
 import os
 import mrdhelper
 from scipy.io import loadmat
+import time
 
 def data_acquisition_thread(conn: connection.Connection, data_deque: collections.deque, stop_event: threading.Event):
     """Thread function to acquire data from the connection and put it in the deque."""
@@ -23,6 +24,7 @@ def data_acquisition_thread(conn: connection.Connection, data_deque: collections
             break
 
         data_deque.append(arm)
+        time.sleep(0.001)
     
 def process_csm(frames):
     data = np.zeros(frames[0].shape, dtype=np.complex128)
