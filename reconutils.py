@@ -24,8 +24,9 @@ def data_acquisition_thread(conn: connection.Connection, data_deque: collections
 
         data_deque.append(arm)
         # Sisyphus work to avoid hogging the priority...
-        for ii in range(1000):
+        for _ in range(500):
             pass
+        # threading.Event().wait(0) # TODO: It is unclear which method is better for online acquisitions.
     
 def process_csm(frames):
     data = np.zeros(frames[0].shape, dtype=np.complex128)
