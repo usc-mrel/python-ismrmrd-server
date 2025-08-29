@@ -1,5 +1,5 @@
 import connection
-import collections
+import queue
 import threading
 import ismrmrd
 import logging
@@ -11,23 +11,27 @@ import ctypes
 import os
 import mrdhelper
 from scipy.io import loadmat
-
-def data_acquisition_thread(conn: connection.Connection, data_deque: collections.deque, stop_event: threading.Event):
-    """Thread function to acquire data from the connection and put it in the deque."""
     
-    arm: ismrmrd.Acquisition | ismrmrd.Waveform | None
-    for arm in conn:
-        if arm is None or stop_event.is_set():
-            data_deque.append(None)
-            logging.info("Acquisition thread has stopped.")
-            break
+def data_acquisition_worker(conn: connection.Connection, data_queue: queue.Queue, stop_event: threading.Event):
+    """Worker function for data acquisition using concurrent.futures."""
+    try:
+        for arm in conn:
+            if arm is None or stop_event.is_set():
+                data_queue.put(None)
+                logging.info("Acquisition worker has stopped.")
+                break
+            
+            data_queue.put(arm)
+            
+            # Yield control to avoid hogging CPU
+            # time.sleep(0.001)
+            
+    except Exception as e:
+        logging.error(f"Error in data acquisition worker: {e}")
+        data_queue.put(None)  # Ensure main thread doesn't hang
+    finally:
+        logging.info("Data acquisition worker finished.")
 
-        data_deque.append(arm)
-        # Sisyphus work to avoid hogging the priority...
-        for _ in range(500):
-            pass
-        # threading.Event().wait(0) # TODO: It is unclear which method is better for online acquisitions.
-    
 def process_csm(frames):
     data = np.zeros(frames[0].shape, dtype=np.complex128)
     for g in frames:

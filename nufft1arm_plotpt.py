@@ -1,10 +1,11 @@
 
-import collections
 import logging
 import os
 import pathlib
+import queue
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from typing import Tuple
 
@@ -26,7 +27,7 @@ from sigpy import fourier
 import GIRF
 from pilottone import calc_fovshift_phase, pt
 from reconutils import (
-    data_acquisition_thread,
+    data_acquisition_worker,
     load_trajectory,
     process_csm,
     process_frame_complex,
@@ -149,137 +150,160 @@ def process(conn: connection.Connection, config, metadata):
 
     coord_gpu = sp.to_device(ktraj, device=device)
     w_gpu = sp.to_device(w, device=device)
-    # Create deque and threading objects
-    data_deque = collections.deque()
+    
+    # Create thread-safe queue and stop event
+    data_queue = queue.Queue(maxsize=100)  # Limit queue size to prevent excessive memory usage
     stop_event = threading.Event()
     
-    # Start data acquisition thread
-    acquisition_thread = threading.Thread(
-        target=data_acquisition_thread,
-        args=(conn, data_deque, stop_event)
-    )
-    acquisition_thread.start()
+    # Use ThreadPoolExecutor for better resource management
+    with ThreadPoolExecutor(max_workers=1, thread_name_prefix="DataAcquisition") as executor:
+        # Submit the data acquisition worker
+        future = executor.submit(data_acquisition_worker, conn, data_queue, stop_event)
 
-    sens = None
-    wf_list = []
-    pt_sig = []  # Pilot tone signal
-    arm: ismrmrd.Acquisition | ismrmrd.Waveform | None
+        sens = None
+        wf_list = []
+        pt_sig = []  # Pilot tone signal
+        arm: ismrmrd.Acquisition | ismrmrd.Waveform | None
 
-    while True:
-        # Try to get data from deque
-        arm = None
+        try:
+            while True:
+                try:
+                    # Use blocking get with timeout to allow checking future status
+                    arm = data_queue.get(timeout=0.1)
+                except queue.Empty:
+                    # No data available, check if acquisition worker is still running
+                    if future.done():
+                        # Check if there was an exception
+                        try:
+                            future.result()  # This will raise any exception that occurred
+                        except Exception as e:
+                            logging.error(f"Data acquisition worker failed: {e}")
+                        break
+                    continue
+                    
+                # Signal that we've processed this item
+                data_queue.task_done()
+                
+                if arm is None:
+                    # End of data signal
+                    break
+                elif type(arm) is ismrmrd.Waveform:
+                    # Accumulate waveforms to send at the end
+                    wf_list.append(arm)
+                    continue
+                elif type(arm) is not ismrmrd.Acquisition:
+                    continue
+                
+                # At this point, we know arm is an Acquisition object
+                assert arm is not None
+                
+                start_iter = time.perf_counter()
+
+                if arm.scan_counter % 1000 == 0:
+                    logging.info("Processing acquisition %d", arm.scan_counter)
+
+                # First arm came, if GIRF is requested, correct trajectories and reupload.
+                if (arm.scan_counter == 1) and APPLY_GIRF:
+                    r_GCS2RCS = np.array(  [[0,    1,   0],  # [PE]   [0 1 0] * [r]
+                                            [1,    0,   0],  # [RO] = [1 0 0] * [c]
+                                            [0,    0,   1]]) # [SL]   [0 0 1] * [s]
+                    r_GCS2PCS = np.array([arm.phase_dir, -np.array(arm.read_dir), arm.slice_dir])
+                    r_GCS2DCS = r_PCS2DCS.dot(r_GCS2PCS)
+                    sR['R'] = r_GCS2DCS.dot(r_GCS2RCS)
+                    k_pred, _ = GIRF.apply_GIRF(g_nom, dt, sR, tRR=tRR)
+                    # k_pred = np.flip(k_pred[:,:,0:2], axis=2) # Drop the z
+                    k_pred = k_pred[:,:,0:2] # Drop the z
+
+                    kmax = np.max(np.abs(k_pred[:,:,0] + 1j * k_pred[:,:,1]))
+                    k_pred = np.swapaxes(k_pred, 0, 1)
+                    k_pred = 0.5 * (k_pred / kmax) * msize
+                    coord_gpu = sp.to_device(k_pred, device=device) # Replace  the original k-space
+                # This is a good place to calculate FOV shift phase.
+                if (arm.scan_counter == 1):
+                    phase_mod_rads = calc_fovshift_phase(kx, ky, arm)
+
+
+                if ((arm.scan_counter == 1) and (arm.data.shape[1]-pre_discard/2) == coord_gpu.shape[1]/2):
+                    # Check if the OS is removed. Should only happen with offline recon.
+                    coord_gpu = coord_gpu[:,::2,:]
+                    w_gpu = w_gpu[:,::2]
+                    pre_discard = int(pre_discard//2)
+
+                if (arm.scan_counter == 1) and (cfg['reconstruction']['remove_oversampling']):
+                    logging.info("Removing oversampling from the data.")
+                    coord_gpu = coord_gpu[:,::2,:]
+                    w_gpu = w_gpu[:,::2]
+
+                data_demod = arm.data[:,pre_discard:]*phase_mod_rads[None,:, arm_counter]
+                ksp_ptsubbed, pt_sig_fit = pt.est_dtft(t_adc, data_demod.T[:,None,:], np.array([fdiff]))
+                pt_sig.append(pt_sig_fit)
+                startarm = time.perf_counter()
+                if cfg['pilottone']['remove_pt']:
+                    adata = sp.to_device(ksp_ptsubbed.squeeze().T*phase_mod_rads[None,:, arm_counter].conj(), device=device)
+                else:
+                    adata = sp.to_device(arm.data[:,pre_discard:], device=device)
+
+                if cfg['reconstruction']['remove_oversampling']:
+                    n_samp = adata.shape[1]
+                    keepOS = np.concatenate([np.arange(n_samp // 4), np.arange(n_samp * 3 // 4, n_samp)])
+                    adata = fourier.fft(fourier.ifft(adata, center=False)[:, keepOS], center=False)
+                    
+                with device:
+                    frames.append(fourier.nufft_adjoint(
+                            adata*w_gpu,
+                            coord_gpu[arm_counter,:,:],
+                            (nchannel, msize, msize)))
+                    
+                endarm = time.perf_counter()
+                logging.debug("Elapsed time for arm %d NUFFT: %f ms.", arm_counter, (endarm-startarm)*1e3)
+
+                arm_counter += 1
+                if arm_counter == n_unique_angles:
+                    arm_counter = 0
+
+                if ((arm.scan_counter) % window_shift) == 0 and ((arm.scan_counter) >= n_arm_per_frame):
+                    start = time.perf_counter()
+                    if coil_combine == "adaptive" and rep_counter == 0:
+                        sens = sp.to_device(process_csm(frames), device=device)
+
+                    if save_complex:
+                        image = process_frame_complex(arm, frames, sens, device, rep_counter, cfg, metadata)
+                    else:
+                        image = process_group(arm, frames, sens, device, rep_counter, cfg, metadata)
+                    end = time.perf_counter()
+
+                    logging.debug("Elapsed time for frame processing: %f secs.", end-start)
+                    del frames[:window_shift]
+                    logging.debug("Sending image to client:\n%s", image)
+                    conn.send_image(image)
+
+                    rep_counter += 1
+
+                    end_iter = time.perf_counter()
+                    logging.debug("Elapsed time for per iteration: %f secs.", end_iter-start_iter)
+
+        except KeyboardInterrupt:
+            logging.info("Received interrupt signal, stopping acquisition...")
+            stop_event.set()
         
-        if data_deque:
-            arm = data_deque.popleft()
-
-        if arm is None:
-            # No data available, check if acquisition thread is still alive
-            if not acquisition_thread.is_alive():
-                break
-            # time.sleep(0.001)  # Small sleep to avoid busy waiting
-            continue
-            
-        # if data_type == 'end':
-        #     break
-        elif type(arm) is ismrmrd.Waveform:
-            # Accumulate waveforms to send at the end
-            wf_list.append(arm)
-            continue
-        elif type(arm) is not ismrmrd.Acquisition:
-            continue
-            
-        # At this point, we know arm is an Acquisition object
-        assert arm is not None
+        except Exception as e:
+            logging.error(f"Error in main processing loop: {e}")
+            stop_event.set()
         
-        start_iter = time.perf_counter()
-
-
-        # First arm came, if GIRF is requested, correct trajectories and reupload.
-        if (arm.scan_counter == 1) and APPLY_GIRF:
-            r_GCS2RCS = np.array(  [[0,    1,   0],  # [PE]   [0 1 0] * [r]
-                                    [1,    0,   0],  # [RO] = [1 0 0] * [c]
-                                    [0,    0,   1]]) # [SL]   [0 0 1] * [s]
-            r_GCS2PCS = np.array([arm.phase_dir, -np.array(arm.read_dir), arm.slice_dir])
-            r_GCS2DCS = r_PCS2DCS.dot(r_GCS2PCS)
-            sR['R'] = r_GCS2DCS.dot(r_GCS2RCS)
-            k_pred, _ = GIRF.apply_GIRF(g_nom, dt, sR, tRR=tRR)
-            # k_pred = np.flip(k_pred[:,:,0:2], axis=2) # Drop the z
-            k_pred = k_pred[:,:,0:2] # Drop the z
-
-            kmax = np.max(np.abs(k_pred[:,:,0] + 1j * k_pred[:,:,1]))
-            k_pred = np.swapaxes(k_pred, 0, 1)
-            k_pred = 0.5 * (k_pred / kmax) * msize
-            coord_gpu = sp.to_device(k_pred, device=device) # Replace  the original k-space
-        # This is a good place to calculate FOV shift phase.
-        if (arm.scan_counter == 1):
-            phase_mod_rads = calc_fovshift_phase(kx, ky, arm)
-
-
-        if ((arm.scan_counter == 1) and (arm.data.shape[1]-pre_discard/2) == coord_gpu.shape[1]/2):
-            # Check if the OS is removed. Should only happen with offline recon.
-            coord_gpu = coord_gpu[:,::2,:]
-            w_gpu = w_gpu[:,::2]
-            pre_discard = int(pre_discard//2)
-
-        if (arm.scan_counter == 1) and (cfg['reconstruction']['remove_oversampling']):
-            logging.info("Removing oversampling from the data.")
-            coord_gpu = coord_gpu[:,::2,:]
-            w_gpu = w_gpu[:,::2]
-
-        data_demod = arm.data[:,pre_discard:]*phase_mod_rads[None,:, arm_counter]
-        ksp_ptsubbed, pt_sig_fit = pt.est_dtft(t_adc, data_demod.T[:,None,:], np.array([fdiff]))
-        pt_sig.append(pt_sig_fit)
-        startarm = time.perf_counter()
-        if cfg['pilottone']['remove_pt']:
-            adata = sp.to_device(ksp_ptsubbed.squeeze().T*phase_mod_rads[None,:, arm_counter].conj(), device=device)
-        else:
-            adata = sp.to_device(arm.data[:,pre_discard:], device=device)
-
-        if cfg['reconstruction']['remove_oversampling']:
-            n_samp = adata.shape[1]
-            keepOS = np.concatenate([np.arange(n_samp // 4), np.arange(n_samp * 3 // 4, n_samp)])
-            adata = fourier.fft(fourier.ifft(adata, center=False)[:, keepOS], center=False)
+        finally:
+            # Ensure clean shutdown
+            stop_event.set()
             
-        with device:
-            frames.append(fourier.nufft_adjoint(
-                    adata*w_gpu,
-                    coord_gpu[arm_counter,:,:],
-                    (nchannel, msize, msize)))
-            
-        endarm = time.perf_counter()
-        logging.debug("Elapsed time for arm %d NUFFT: %f ms.", arm_counter, (endarm-startarm)*1e3)
-
-        arm_counter += 1
-        if arm_counter == n_unique_angles:
-            arm_counter = 0
-
-        if ((arm.scan_counter) % window_shift) == 0 and ((arm.scan_counter) >= n_arm_per_frame):
-            start = time.perf_counter()
-            if coil_combine == "adaptive" and rep_counter == 0:
-                sens = sp.to_device(process_csm(frames), device=device)
-
-            if save_complex:
-                image = process_frame_complex(arm, frames, sens, device, rep_counter, cfg, metadata)
-            else:
-                image = process_group(arm, frames, sens, device, rep_counter, cfg, metadata)
-            end = time.perf_counter()
-
-            logging.debug("Elapsed time for frame processing: %f secs.", end-start)
-            del frames[:window_shift]
-            logging.debug("Sending image to client:\n%s", image)
-            conn.send_image(image)
-
-            rep_counter += 1
-
-        end_iter = time.perf_counter()
-        logging.debug("Elapsed time for per iteration: %f secs.", end_iter-start_iter)
+            # Wait for the acquisition task to complete with timeout
+            try:
+                future.result(timeout=5.0)
+            except Exception as e:
+                logging.warning(f"Error while waiting for acquisition task to complete: {e}")
 
 
     # Send waveforms back to save them with images
     # for wf in wf_list:
     #     conn.send_waveform(wf)
-    # Wait for acquisition thread to finish
-    acquisition_thread.join()
     
     conn.send_close()
     logging.info('Reconstruction is finished.')
