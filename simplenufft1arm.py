@@ -1,9 +1,11 @@
 import logging
+import os
 import pathlib
 import queue
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
 
 import ismrmrd
 import numpy as np
@@ -12,9 +14,10 @@ import sigpy as sp
 from sigpy import fourier
 
 import connection
-import GIRF
 from reconutils import (
+    data_acquisition_with_save_worker,
     data_acquisition_worker,
+    girf_calibration,
     load_trajectory,
     process_csm,
     process_frame_complex,
@@ -48,6 +51,8 @@ def process(conn: connection.Connection, config, metadata):
     logging.info(f'''
                  ================================================================
                  Arms per frame: {n_arm_per_frame}
+                 Window shift: {window_shift}
+                 FOV oversampling: {cfg['reconstruction']['fov_oversampling']}
                  Apply GIRF?: {APPLY_GIRF}
                  GPU Device: {gpu_device}
                  Coil Combine: {coil_combine}
@@ -80,15 +85,9 @@ def process(conn: connection.Connection, config, metadata):
         except KeyError:
             dt = 1e-6 # [s]
 
-        patient_position = metadata.measurementInformation.patientPosition.value
-        r_PCS2DCS = GIRF.calculate_matrix_pcs_to_dcs(patient_position)
-
         gx = 1e3*np.concatenate((np.zeros((1, kx.shape[1])), np.diff(kx, axis=0)))/dt/42.58e6
         gy = 1e3*np.concatenate((np.zeros((1, kx.shape[1])), np.diff(ky, axis=0)))/dt/42.58e6
         g_nom = np.stack((gx, -gy), axis=2)
-
-        sR = {'T': 0.55}
-        tRR = 3*1e-6/dt
 
     ktraj = np.stack((kx, -ky), axis=2)
 
@@ -98,7 +97,7 @@ def process(conn: connection.Connection, config, metadata):
     # swap 0 and 1 axes to make repetitions the first axis (repetitions, interleaves, 2)
     ktraj = np.swapaxes(ktraj, 0, 1)
 
-    msize = np.int16(10 * traj['param']['fov'][0,0][0,0] / traj['param']['spatial_resolution'][0,0][0,0])
+    msize = int(cfg['reconstruction']['fov_oversampling'] * 10 * traj['param']['fov'][0,0][0,0] / traj['param']['spatial_resolution'][0,0][0,0])
 
     ktraj = 0.5 * (ktraj / kmax) * msize
 
@@ -128,8 +127,16 @@ def process(conn: connection.Connection, config, metadata):
     
     # Use ThreadPoolExecutor for better resource management
     with ThreadPoolExecutor(max_workers=1, thread_name_prefix="DataAcquisition") as executor:
-        # Submit the data acquisition task
-        future = executor.submit(data_acquisition_worker, conn, data_queue, stop_event)
+        # Submit the data acquisition worker
+        if cfg['save_raw']:
+            output_file_path = os.path.join(conn.savedataFolder)
+            if (metadata.measurementInformation.protocolName != ""):
+                output_file_path = os.path.join(conn.savedataFolder, f"meas_MID{int(metadata.measurementInformation.measurementID.split('_')[-1]):05d}_{metadata.measurementInformation.protocolName}_{datetime.now().strftime('%H%M%S')}.h5")
+            else:
+                output_file_path = os.path.join(conn.savedataFolder, f"meas_MID{int(metadata.measurementInformation.measurementID.split('_')[-1]):05d}_UnknownProtocol_{datetime.now().strftime('%Y-%m-%d-%H%M%S')}.h5")
+            future = executor.submit(data_acquisition_with_save_worker, conn, data_queue, stop_event, output_file_path, metadata)
+        else:
+            future = executor.submit(data_acquisition_worker, conn, data_queue, stop_event)
         
         scan_counter_tracker = 0
         
@@ -181,18 +188,7 @@ def process(conn: connection.Connection, config, metadata):
         
                 # First arm came, if GIRF is requested, correct trajectories and reupload.
                 if (arm.scan_counter == 1) and APPLY_GIRF:
-                    r_GCS2RCS = np.array(  [[0,    1,   0],  # [PE]   [0 1 0] * [r]
-                                            [1,    0,   0],  # [RO] = [1 0 0] * [c]
-                                            [0,    0,   1]]) # [SL]   [0 0 1] * [s]
-                    r_GCS2PCS = np.array([arm.phase_dir, -np.array(arm.read_dir), arm.slice_dir])
-                    r_GCS2DCS = r_PCS2DCS.dot(r_GCS2PCS)
-                    sR['R'] = r_GCS2DCS.dot(r_GCS2RCS)
-                    k_pred, _ = GIRF.apply_GIRF(g_nom, dt, sR, tRR=tRR, girf_file=cfg['girf_file'])
-                    k_pred = k_pred[:,:,0:2] # Drop the z
-
-                    kmax = np.max(np.abs(k_pred[:,:,0] + 1j * k_pred[:,:,1]))
-                    k_pred = np.swapaxes(k_pred, 0, 1)
-                    k_pred = 0.5 * (k_pred / kmax) * msize
+                    k_pred = girf_calibration(g_nom, metadata.measurementInformation.patientPosition.value, arm, dt, msize, girf_file=cfg['girf_file'])
                     coord_gpu = sp.to_device(k_pred, device=device) # Replace  the original k-space
 
                 if (arm.scan_counter == 1) and (arm.data.shape[1]-pre_discard/2) == coord_gpu.shape[1]/2:
@@ -258,8 +254,8 @@ def process(conn: connection.Connection, config, metadata):
                 logging.warning(f"Error while waiting for acquisition task to complete: {e}")
 
     # Send waveforms back to save them with images
-    for wf in wf_list:
-        conn.send_waveform(wf)
+    # for wf in wf_list:
+    #     conn.send_waveform(wf)
 
     conn.send_close()
     logging.debug('Reconstruction is finished.')

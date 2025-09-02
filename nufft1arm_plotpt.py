@@ -24,10 +24,10 @@ from scipy.io import savemat
 from scipy.signal import savgol_filter
 from sigpy import fourier
 
-import GIRF
 from pilottone import calc_fovshift_phase, pt
 from reconutils import (
     data_acquisition_worker,
+    data_acquisition_with_save_worker,
     load_trajectory,
     process_csm,
     process_frame_complex,
@@ -119,25 +119,16 @@ def process(conn: connection.Connection, config, metadata):
     # Prepare gradients and variables if GIRF is requested. 
     # Unfortunately, we don't know rotations until the first data, so we can't prepare them yet.
     if APPLY_GIRF:
-
-        patient_position = metadata.measurementInformation.patientPosition.value
-
         gx = 1e3*np.concatenate((np.zeros((1, kx.shape[1])), np.diff(kx, axis=0)))/dt/42.58e6
         gy = 1e3*np.concatenate((np.zeros((1, kx.shape[1])), np.diff(ky, axis=0)))/dt/42.58e6
         g_nom = np.stack((gx, -gy), axis=2)
 
-
-
     ktraj = np.stack((kx, -ky), axis=2)
-
     # find max ktraj value
     kmax = np.max(np.abs(kx + 1j * ky))
-
     # swap 0 and 1 axes to make repetitions the first axis (repetitions, interleaves, 2)
     ktraj = np.swapaxes(ktraj, 0, 1)
-
-    msize = int(10 * traj['param']['fov'][0,0][0,0] / traj['param']['spatial_resolution'][0,0][0,0])
-
+    msize = int(cfg['reconstruction']['fov_oversampling'] * 10 * traj['param']['fov'][0,0][0,0] / traj['param']['spatial_resolution'][0,0][0,0])
     ktraj = 0.5 * (ktraj / kmax) * msize
 
     nchannel = metadata.acquisitionSystemInformation.receiverChannels
@@ -168,7 +159,15 @@ def process(conn: connection.Connection, config, metadata):
     # Use ThreadPoolExecutor for better resource management
     with ThreadPoolExecutor(max_workers=1, thread_name_prefix="DataAcquisition") as executor:
         # Submit the data acquisition worker
-        future = executor.submit(data_acquisition_worker, conn, data_queue, stop_event)
+        if cfg['save_raw']:
+            output_file_path = os.path.join(conn.savedataFolder)
+            if (metadata.measurementInformation.protocolName != ""):
+                output_file_path = os.path.join(conn.savedataFolder, f"meas_MID{int(metadata.measurementInformation.measurementID.split('_')[-1]):05d}_{metadata.measurementInformation.protocolName}_{datetime.now().strftime('%H%M%S')}.h5")
+            else:
+                output_file_path = os.path.join(conn.savedataFolder, f"meas_MID{int(metadata.measurementInformation.measurementID.split('_')[-1]):05d}_UnknownProtocol_{datetime.now().strftime('%Y-%m-%d-%H%M%S')}.h5")
+            future = executor.submit(data_acquisition_with_save_worker, conn, data_queue, stop_event, output_file_path, metadata)
+        else:
+            future = executor.submit(data_acquisition_worker, conn, data_queue, stop_event)
 
         sens = None
         wf_list = []
@@ -218,7 +217,7 @@ def process(conn: connection.Connection, config, metadata):
 
                 # First arm came, if GIRF is requested, correct trajectories and reupload.
                 if (arm.scan_counter == 1) and APPLY_GIRF:
-                    k_pred = girf_calibration(g_nom, patient_position, arm, dt, msize, girf_file=cfg['girf_file'])
+                    k_pred = girf_calibration(g_nom, metadata.measurementInformation.patientPosition.value, arm, dt, msize, girf_file=cfg['girf_file'])
                     coord_gpu = sp.to_device(k_pred, device=device) # Replace  the original k-space
 
                 # This is a good place to calculate FOV shift phase.

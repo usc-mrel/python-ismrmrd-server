@@ -1,10 +1,12 @@
 "metafile_paths" = ["/opt/code/python-ismrmrd-server/seq_meta"]
 "girf_file" = "GIRF/GIRF_20200221_Duyn_method_coil2.mat"
+"save_raw" = true
 
 [reconstruction]
 "apply_girf"        = true
 "arms_per_frame"    = 55
 "window_shift"      = 17
+"fov_oversampling"  = 1.0
 "gpu_device"        = 0
 "coil_combine"      = "rssq" # Options: "rssq", "adaptive"
 "save_complex"      = false # Save complex float images, rather than scaled magnitude int images.

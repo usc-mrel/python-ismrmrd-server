@@ -33,6 +33,34 @@ def data_acquisition_worker(conn: connection.Connection, data_queue: queue.Queue
     finally:
         logging.info("Data acquisition worker finished.")
 
+def data_acquisition_with_save_worker(conn: connection.Connection, data_queue: queue.Queue, stop_event: threading.Event, output_file_path: str, metadata: ismrmrd.xsd.ismrmrdHeader):
+    """Worker function for data acquisition that also saves the raw data using concurrent.futures."""
+    
+    with ismrmrd.Dataset(output_file_path, create_if_needed=True) as dset:
+        dset.write_xml_header(ismrmrd.xsd.ToXML(metadata))
+
+        try:
+            for arm in conn:
+                if arm is None or stop_event.is_set():
+                    data_queue.put(None)
+                    logging.info("Acquisition worker has stopped.")
+                    break
+                
+                data_queue.put(arm)
+                if type(arm) is ismrmrd.Acquisition:
+                    dset.append_acquisition(arm)
+                elif type(arm) is ismrmrd.Waveform:
+                    dset.append_waveform(arm)
+
+                # Yield control to avoid hogging CPU
+                # time.sleep(0.001)
+                
+        except Exception as e:
+            logging.error(f"Error in data acquisition worker: {e}")
+            data_queue.put(None)  # Ensure main thread doesn't hang
+        finally:
+            logging.info("Data acquisition worker finished.")
+
 def girf_calibration(g_nom: np.ndarray, patient_position: str, arm: ismrmrd.Acquisition, dt: float, msize: int, girf_file: str) -> np.ndarray:
 
     r_PCS2DCS = GIRF.calculate_matrix_pcs_to_dcs(patient_position)
