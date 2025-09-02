@@ -150,8 +150,12 @@ def process(conn: connection.Connection, config, metadata):
 
     # Discard phase correction lines and accumulate lines until we get fully sampled data
     frames = []
+    ecg = []
+    ext1 = []
+    resp_pt = []
     arm_counter = 0
     rep_counter = 0
+    acq_counter = 0
     device = sp.Device(gpu_device)
 
     coord_gpu = sp.to_device(ktraj, device=device)
@@ -196,10 +200,17 @@ def process(conn: connection.Connection, config, metadata):
                 elif type(arm) is ismrmrd.Waveform:
                     # Accumulate waveforms to send at the end
                     wf_list.append(arm)
+                    if arm.waveform_id == ECG_WAVEFORM_ID:
+                        ecg.append(arm.data)
+                    elif arm.waveform_id == RESPPT_WAVEFORM_ID:
+                        resp_pt.append(arm.data)
+                    elif arm.waveform_id == EXT1_WAVEFORM_ID:
+                        ext1.append(arm.data)
                     continue
                 elif type(arm) is not ismrmrd.Acquisition:
                     continue
-                                
+
+                acq_counter += 1
                 start_iter = time.perf_counter()
 
                 if arm.scan_counter % 1000 == 0:
@@ -291,19 +302,21 @@ def process(conn: connection.Connection, config, metadata):
                 future.result(timeout=5.0)
             except Exception as e:
                 logging.warning(f"Error while waiting for acquisition task to complete: {e}")
-
-
-    # Send waveforms back to save them with images
-    # for wf in wf_list:
-    #     conn.send_waveform(wf)
     
     conn.send_close()
     logging.info('Reconstruction is finished.')
-    # Filter and prepare pilot tone signal
 
-    process_pilot_tone_signal(metadata, cfg, save_folder, coil_name, pt_sig)
+    # Prepare waveforms
+    ecg = np.concatenate(ecg, axis=1).T if len(ecg) > 0 else np.array([])
+    ecg = ecg[:, 0].astype(np.float32)
+    ecg -= np.percentile(ecg, 5, axis=0)
+    ecg /= np.max(np.abs(ecg), axis=0, keepdims=True)
+    resp_pt = np.concatenate(resp_pt, axis=1).T if len(resp_pt) > 0 else np.array([])
+    ext1 = np.concatenate(ext1, axis=1).T if len(ext1) > 0 else np.array([])
 
-def process_pilot_tone_signal(metadata, cfg, save_folder, coil_name, pt_sig):
+    process_pilot_tone_signal(metadata, cfg, save_folder, coil_name, pt_sig, ecg, resp_pt)
+
+def process_pilot_tone_signal(metadata, cfg, save_folder, coil_name, pt_sig, ecg=list(), resp_pt=list()):
     if len(pt_sig) > 0:
         logging.info("Processing pilot tone signal...")
         dt_pt = metadata.sequenceParameters.TR[0]*1e-3  # Convert TR from ms to seconds
@@ -365,9 +378,17 @@ def process_pilot_tone_signal(metadata, cfg, save_folder, coil_name, pt_sig):
             pt_respiratory, pt_cardiac = pt.extract_pilottone_navs(pt_sig, f_samp, pt_extract_params)
 
             fig, axs = plt.subplots(2, 1, figsize=(10, 8))
-            axs[0].plot(time_pt, pt_respiratory)
+            axs[0].plot(time_pt, pt_respiratory/np.max(pt_respiratory), label='Respiratory Pilot Tone')
+            if len(resp_pt) > 0:
+                time_resp = np.arange(0, resp_pt.shape[0])*2.5e-3
+                axs[0].plot(time_resp, resp_pt/np.max(resp_pt), label='Respiratory Beat Sensor', linestyle='--')
+            axs[0].legend()
             axs[0].set_title('Respiratory Signal')
-            axs[1].plot(time_pt, pt_cardiac)
+            axs[1].plot(time_pt, pt_cardiac/np.max(pt_cardiac), label='Cardiac Pilot Tone')
+            if len(ecg) > 0:
+                time_ecg = np.arange(0, ecg.shape[0])*2.5e-3
+                axs[1].plot(time_ecg, ecg, label='ECG Signal', linestyle='--')
+            axs[1].legend()
             axs[1].set_title('Cardiac Signal')
             axs[1].set_xlabel('Time [s]')
             plt.tight_layout()
