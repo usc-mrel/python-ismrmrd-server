@@ -16,14 +16,23 @@ def process(conn: connection.Connection, config, metadata):
     startarm = time.perf_counter()
 
     output_file_path = os.path.join(conn.savedataFolder)
-    if (metadata.measurementInformation.protocolName != ""):
-        output_file_path = os.path.join(conn.savedataFolder, f"noise_meas_MID{int(metadata.measurementInformation.measurementID.split('_')[-1]):05d}_{metadata.measurementInformation.protocolName}_{datetime.now().strftime('%H%M%S')}.h5")
-    else:
-        output_file_path = os.path.join(conn.savedataFolder, f"noise_meas_MID{int(metadata.measurementInformation.measurementID.split('_')[-1]):05d}_UnknownProtocol_{datetime.now().strftime('%Y-%m-%d-%H%M%S')}.h5")
+    try:
+        if (metadata.measurementInformation.protocolName != ""):
+            output_file_path = os.path.join(conn.savedataFolder, f"noise_meas_MID{int(metadata.measurementInformation.measurementID.split('_')[-1]):05d}_{metadata.measurementInformation.protocolName}_{datetime.now().strftime('%H%M%S')}.h5")
+        else:
+            output_file_path = os.path.join(conn.savedataFolder, f"noise_meas_MID{int(metadata.measurementInformation.measurementID.split('_')[-1]):05d}_UnknownProtocol_{datetime.now().strftime('%Y-%m-%d-%H%M%S')}.h5")
+    except Exception as e:
+        logging.error("Error constructing output file path: %s", e)
+        # Fallback to a default file name if there's an error
+        output_file_path = os.path.join(conn.savedataFolder, f"noise_meas_default_{datetime.now().strftime('%Y-%m-%d-%H%M%S')}.h5")
 
     with ismrmrd.Dataset(output_file_path, create_if_needed=True) as dset:
         
-        dset.write_xml_header(ismrmrd.xsd.ToXML(metadata))
+        if metadata != '':
+            try:
+                dset.write_xml_header(ismrmrd.xsd.ToXML(metadata))
+            except Exception as e:
+                logging.error("Error writing XML header: %s", e)
         for acq in conn:
             if acq is None:
                 break
