@@ -5,7 +5,7 @@ from scipy.signal.windows import hann
 from scipy.fft import fft, fftshift, ifft, ifftshift
 import pathlib
 
-def apply_GIRF(gradients_nominal, dt, R, girf_file=None, tRR=0):
+def apply_GIRF(gradients_nominal: np.ndarray, dt: float, R: np.ndarray, girf_file: str | None = None, tRR: float = 0):
     # Handle "nasty" co-opting of R-variable to include field info.
     if isinstance(R, dict):
         R = R['R']

@@ -32,10 +32,19 @@ from reconutils import (
     process_csm,
     process_frame_complex,
     process_group,
+    girf_calibration,
 )
 
 # Folder for debug output files
 debugFolder = "/tmp/share/debug"
+
+# Waveform IDs for different physiological signals
+ECG_WAVEFORM_ID = 0
+PULSEOX_WAVEFORM_ID = 1
+RESP_WAVEFORM_ID = 2
+EXT1_WAVEFORM_ID = 3
+EXT2_WAVEFORM_ID = 4
+RESPPT_WAVEFORM_ID = 12
 
 def process(conn: connection.Connection, config, metadata):
     logging.disable(logging.DEBUG)
@@ -112,14 +121,11 @@ def process(conn: connection.Connection, config, metadata):
     if APPLY_GIRF:
 
         patient_position = metadata.measurementInformation.patientPosition.value
-        r_PCS2DCS = GIRF.calculate_matrix_pcs_to_dcs(patient_position)
 
         gx = 1e3*np.concatenate((np.zeros((1, kx.shape[1])), np.diff(kx, axis=0)))/dt/42.58e6
         gy = 1e3*np.concatenate((np.zeros((1, kx.shape[1])), np.diff(ky, axis=0)))/dt/42.58e6
         g_nom = np.stack((gx, -gy), axis=2)
 
-        sR = {'T': 0.55}
-        tRR = 3*1e-6/dt
 
 
     ktraj = np.stack((kx, -ky), axis=2)
@@ -130,7 +136,7 @@ def process(conn: connection.Connection, config, metadata):
     # swap 0 and 1 axes to make repetitions the first axis (repetitions, interleaves, 2)
     ktraj = np.swapaxes(ktraj, 0, 1)
 
-    msize = np.int16(10 * traj['param']['fov'][0,0][0,0] / traj['param']['spatial_resolution'][0,0][0,0])
+    msize = int(10 * traj['param']['fov'][0,0][0,0] / traj['param']['spatial_resolution'][0,0][0,0])
 
     ktraj = 0.5 * (ktraj / kmax) * msize
 
@@ -193,10 +199,7 @@ def process(conn: connection.Connection, config, metadata):
                     continue
                 elif type(arm) is not ismrmrd.Acquisition:
                     continue
-                
-                # At this point, we know arm is an Acquisition object
-                assert arm is not None
-                
+                                
                 start_iter = time.perf_counter()
 
                 if arm.scan_counter % 1000 == 0:
@@ -204,20 +207,9 @@ def process(conn: connection.Connection, config, metadata):
 
                 # First arm came, if GIRF is requested, correct trajectories and reupload.
                 if (arm.scan_counter == 1) and APPLY_GIRF:
-                    r_GCS2RCS = np.array(  [[0,    1,   0],  # [PE]   [0 1 0] * [r]
-                                            [1,    0,   0],  # [RO] = [1 0 0] * [c]
-                                            [0,    0,   1]]) # [SL]   [0 0 1] * [s]
-                    r_GCS2PCS = np.array([arm.phase_dir, -np.array(arm.read_dir), arm.slice_dir])
-                    r_GCS2DCS = r_PCS2DCS.dot(r_GCS2PCS)
-                    sR['R'] = r_GCS2DCS.dot(r_GCS2RCS)
-                    k_pred, _ = GIRF.apply_GIRF(g_nom, dt, sR, tRR=tRR)
-                    # k_pred = np.flip(k_pred[:,:,0:2], axis=2) # Drop the z
-                    k_pred = k_pred[:,:,0:2] # Drop the z
-
-                    kmax = np.max(np.abs(k_pred[:,:,0] + 1j * k_pred[:,:,1]))
-                    k_pred = np.swapaxes(k_pred, 0, 1)
-                    k_pred = 0.5 * (k_pred / kmax) * msize
+                    k_pred = girf_calibration(g_nom, patient_position, arm, dt, msize, girf_file=cfg['girf_file'])
                     coord_gpu = sp.to_device(k_pred, device=device) # Replace  the original k-space
+
                 # This is a good place to calculate FOV shift phase.
                 if (arm.scan_counter == 1):
                     phase_mod_rads = calc_fovshift_phase(kx, ky, arm)

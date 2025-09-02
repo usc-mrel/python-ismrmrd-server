@@ -11,6 +11,7 @@ import ctypes
 import os
 import mrdhelper
 from scipy.io import loadmat
+import GIRF
     
 def data_acquisition_worker(conn: connection.Connection, data_queue: queue.Queue, stop_event: threading.Event):
     """Worker function for data acquisition using concurrent.futures."""
@@ -31,6 +32,27 @@ def data_acquisition_worker(conn: connection.Connection, data_queue: queue.Queue
         data_queue.put(None)  # Ensure main thread doesn't hang
     finally:
         logging.info("Data acquisition worker finished.")
+
+def girf_calibration(g_nom: np.ndarray, patient_position: str, arm: ismrmrd.Acquisition, dt: float, msize: int, girf_file: str) -> np.ndarray:
+
+    r_PCS2DCS = GIRF.calculate_matrix_pcs_to_dcs(patient_position)
+    r_GCS2RCS = np.array(  [[0,    1,   0],  # [PE]   [0 1 0] * [r]
+                        [1,    0,   0],  # [RO] = [1 0 0] * [c]
+                        [0,    0,   1]]) # [SL]   [0 0 1] * [s]
+    r_GCS2PCS = np.array([arm.phase_dir, -np.array(arm.read_dir), arm.slice_dir])
+    r_GCS2DCS = r_PCS2DCS.dot(r_GCS2PCS)
+    sR = r_GCS2DCS.dot(r_GCS2RCS)
+    tRR = 3*1e-6/dt
+
+    k_pred, _ = GIRF.apply_GIRF(g_nom, dt, sR, girf_file=girf_file, tRR=tRR)
+    # k_pred = np.flip(k_pred[:,:,0:2], axis=2) # Drop the z
+    k_pred = k_pred[:,:,0:2] # Drop the z
+
+    kmax = np.max(np.abs(k_pred[:,:,0] + 1j * k_pred[:,:,1]))
+    k_pred = np.swapaxes(k_pred, 0, 1)
+    k_pred = 0.5 * (k_pred / kmax) * msize
+
+    return k_pred
 
 def process_csm(frames):
     data = np.zeros(frames[0].shape, dtype=np.complex128)
