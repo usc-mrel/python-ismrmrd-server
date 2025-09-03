@@ -307,9 +307,10 @@ def process(conn: connection.Connection, config, metadata):
 
     # Prepare waveforms
     ecg = np.concatenate(ecg, axis=1).T if len(ecg) > 0 else np.array([])
-    ecg = ecg[:, 0].astype(np.float32)
-    ecg -= np.percentile(ecg, 5, axis=0)
-    ecg /= np.max(np.abs(ecg), axis=0, keepdims=True)
+    if len(ecg) > 0:
+        ecg = ecg[:, 0].astype(np.float32)
+        ecg -= np.percentile(ecg, 5, axis=0)
+        ecg /= np.max(np.abs(ecg), axis=0, keepdims=True)
     resp_pt = np.concatenate(resp_pt, axis=1).T if len(resp_pt) > 0 else np.array([])
     ext1 = np.concatenate(ext1, axis=1).T if len(ext1) > 0 else np.array([])
 
