@@ -1,18 +1,23 @@
-import connection
+import ctypes
+import logging
+import os
+import pathlib
 import queue
 import threading
+
 import ismrmrd
-import logging
-import coils
 import numpy as np
 import numpy.typing as npt
+import rtoml
 import sigpy as sp
-import ctypes
-import os
-import mrdhelper
 from scipy.io import loadmat
+
+import coils
+import connection
 import GIRF
-    
+import mrdhelper
+
+
 def data_acquisition_worker(conn: connection.Connection, data_queue: queue.Queue, stop_event: threading.Event):
     """Worker function for data acquisition using concurrent.futures."""
     try:
@@ -239,3 +244,23 @@ def load_trajectory(metadata, metafile_paths: list[str]) -> dict | None:
         logging.error(f"Trajectory file {traj_name}.mat not found in specified paths.")
         return None
     
+def load_config(config_file_name: str) -> dict | None:
+    path_list = [
+        pathlib.Path('/tmp/share/configs'),
+        pathlib.Path(__file__).parent / 'configs', 
+        ]
+    for path in path_list:
+        cfg_fullpath = path / config_file_name
+        logging.debug(f"Checking for config file at: {cfg_fullpath}")
+        if os.path.isfile(cfg_fullpath):
+            # We now read these parameters from toml file, so that we won't have to keep restarting the server when we change them.
+            logging.info(f"Using the configuration at {cfg_fullpath}")
+            try:
+                with open(cfg_fullpath) as jf:
+                    cfg = rtoml.load(jf)
+                return cfg
+            except Exception as e:
+                logging.error(f"Error loading configuration file {config_file_name}: {e}")
+                return None
+    logging.error(f"Configuration file {config_file_name} not found in specified paths: {path_list}.")
+    return None

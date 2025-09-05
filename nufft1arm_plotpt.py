@@ -1,7 +1,6 @@
 
 import logging
 import os
-import pathlib
 import queue
 import threading
 import time
@@ -13,7 +12,6 @@ import ismrmrd
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
-import rtoml
 
 import connection
 
@@ -24,16 +22,8 @@ from scipy.io import savemat
 from scipy.signal import savgol_filter
 from sigpy import fourier
 
+import reconutils
 from pilottone import calc_fovshift_phase, pt
-from reconutils import (
-    data_acquisition_worker,
-    data_acquisition_with_save_worker,
-    load_trajectory,
-    process_csm,
-    process_frame_complex,
-    process_group,
-    girf_calibration,
-)
 
 # Folder for debug output files
 debugFolder = "/tmp/share/debug"
@@ -50,12 +40,11 @@ def process(conn: connection.Connection, config, metadata):
     logging.disable(logging.DEBUG)
     
     logging.info("Config: \n%s", config)
-    # logging.info("Metadata: \n%s", metadata)
 
-    # We now read these parameters from toml file, so that we won't have to keep restarting the server when we change them.
-    logging.info('''Loading and applying file configs/rtspiral_vspt_config.toml''')
-    with open(pathlib.Path(__file__).parent / 'configs/rtspiral_vspt_config.toml') as jf:
-        cfg = rtoml.load(jf)
+    cfg = reconutils.load_config('rtspiral_vspt_config.toml')
+    if cfg is None:
+        logging.error("Failed to load configuration file.")
+        return
 
     n_arm_per_frame = cfg['reconstruction']['arms_per_frame']
     window_shift    = cfg['reconstruction']['window_shift']
@@ -78,7 +67,7 @@ def process(conn: connection.Connection, config, metadata):
                  =================================================================''')
     
     # start = time.perf_counter()
-    traj = load_trajectory(metadata, metafile_paths)
+    traj = reconutils.load_trajectory(metadata, metafile_paths)
     if traj is None:
         logging.error("Failed to load trajectory.")
         return
@@ -165,9 +154,9 @@ def process(conn: connection.Connection, config, metadata):
                 output_file_path = os.path.join(conn.savedataFolder, f"meas_MID{int(metadata.measurementInformation.measurementID.split('_')[-1]):05d}_{metadata.measurementInformation.protocolName}_{datetime.now().strftime('%H%M%S')}.h5")
             else:
                 output_file_path = os.path.join(conn.savedataFolder, f"meas_MID{int(metadata.measurementInformation.measurementID.split('_')[-1]):05d}_UnknownProtocol_{datetime.now().strftime('%Y-%m-%d-%H%M%S')}.h5")
-            future = executor.submit(data_acquisition_with_save_worker, conn, data_queue, stop_event, output_file_path, metadata)
+            future = executor.submit(reconutils.data_acquisition_with_save_worker, conn, data_queue, stop_event, output_file_path, metadata)
         else:
-            future = executor.submit(data_acquisition_worker, conn, data_queue, stop_event)
+            future = executor.submit(reconutils.data_acquisition_worker, conn, data_queue, stop_event)
 
         sens = None
         wf_list = []
@@ -217,7 +206,7 @@ def process(conn: connection.Connection, config, metadata):
 
                 # First arm came, if GIRF is requested, correct trajectories and reupload.
                 if (arm.scan_counter == 1) and APPLY_GIRF:
-                    k_pred = girf_calibration(g_nom, metadata.measurementInformation.patientPosition.value, arm, dt, msize, girf_file=cfg['girf_file'])
+                    k_pred = reconutils.girf_calibration(g_nom, metadata.measurementInformation.patientPosition.value, arm, dt, msize, girf_file=cfg['girf_file'])
                     coord_gpu = sp.to_device(k_pred, device=device) # Replace  the original k-space
 
                 # This is a good place to calculate FOV shift phase.
@@ -266,12 +255,12 @@ def process(conn: connection.Connection, config, metadata):
                 if ((arm.scan_counter) % window_shift) == 0 and ((arm.scan_counter) >= n_arm_per_frame):
                     start = time.perf_counter()
                     if coil_combine == "adaptive" and rep_counter == 0:
-                        sens = sp.to_device(process_csm(frames), device=device)
+                        sens = sp.to_device(reconutils.process_csm(frames), device=device)
 
                     if save_complex:
-                        image = process_frame_complex(arm, frames, sens, device, rep_counter, cfg, metadata)
+                        image = reconutils.process_frame_complex(arm, frames, sens, device, rep_counter, cfg, metadata)
                     else:
-                        image = process_group(arm, frames, sens, device, rep_counter, cfg, metadata)
+                        image = reconutils.process_group(arm, frames, sens, device, rep_counter, cfg, metadata)
                     end = time.perf_counter()
 
                     logging.debug("Elapsed time for frame processing: %f secs.", end-start)

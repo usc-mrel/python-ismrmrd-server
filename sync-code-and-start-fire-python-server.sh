@@ -11,9 +11,6 @@
 export TMPDIR=/tmp/share
 
 cp -R -f /tmp/share/code/* "/opt/code/python-ismrmrd-server/"
-mkdir -p "/opt/code/python-ismrmrd-server/seq_meta/"
-cp -R -f /tmp/share/trajectories/* "/opt/code/python-ismrmrd-server/seq_meta/"
-cp -R -f /tmp/share/configs/* "/opt/code/python-ismrmrd-server/configs/"
 
 if [ $# -eq 2 ]; then
   LOG_FILE=${1}

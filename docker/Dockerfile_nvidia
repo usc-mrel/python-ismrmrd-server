@@ -63,7 +63,7 @@ RUN pip3 install h5py==3.10.0 ismrmrd==1.14.1 && \
     git clone https://github.com/ismrmrd/ismrmrd-python-tools.git && \
     cd /opt/code/ismrmrd-python-tools && \
     pip3 install --no-cache-dir . && \
-    pip3 install --no-cache-dir matplotlib==3.8.2 pydicom==3.0.1 rtoml sigpy cupy-cuda11x einops
+    pip3 install --no-cache-dir matplotlib==3.8.2 pydicom==3.0.1 rtoml sigpy cupy-cuda11x einops pyfftw
 
 # Cleanup files not required after installation
 RUN apt-get clean && \
