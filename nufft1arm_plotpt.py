@@ -295,15 +295,9 @@ def process(conn: connection.Connection, config, metadata):
     logging.info('Reconstruction is finished.')
 
     # Prepare waveforms
-    ecg = np.concatenate(ecg, axis=1).T if len(ecg) > 0 else np.array([])
-    if len(ecg) > 0:
-        ecg = ecg[:, 0].astype(np.float32)
-        ecg -= np.percentile(ecg, 5, axis=0)
-        ecg /= np.max(np.abs(ecg), axis=0, keepdims=True)
-    resp_pt = np.concatenate(resp_pt, axis=1).T if len(resp_pt) > 0 else np.array([])
-    ext1 = np.concatenate(ext1, axis=1).T if len(ext1) > 0 else np.array([])
-
-    process_pilot_tone_signal(metadata, cfg, save_folder, coil_name, pt_sig, ecg, resp_pt)
+    # TODO: ECG time axis should be shifted to align with the acquisition. 
+    resp, card = reconutils.process_waveforms(ecg, ext1, resp_pt)
+    process_pilot_tone_signal(metadata, cfg, save_folder, coil_name, pt_sig, card, resp)
 
 def process_pilot_tone_signal(metadata, cfg, save_folder, coil_name, pt_sig, ecg=list(), resp_pt=list()):
     if len(pt_sig) > 0:

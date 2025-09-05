@@ -222,6 +222,26 @@ def process_frame_complex(group, frames: list, sens: npt.NDArray | None, device,
     image.attribute_string = xml
     return image
 
+def process_waveforms(ecg, ext1, resp_pt) -> tuple[npt.NDArray, npt.NDArray]:
+    ecg = np.concatenate(ecg, axis=1).T if len(ecg) > 0 else np.array([])
+    if len(ecg) > 0:
+        ecg = ecg[:, 0].astype(np.float32)
+        ecg -= np.percentile(ecg, 5, axis=0)
+        ecg /= np.max(np.abs(ecg), axis=0, keepdims=True)
+    resp_pt = np.concatenate(resp_pt, axis=1).T if len(resp_pt) > 0 else np.array([])
+    if len(resp_pt) > 0:
+        resp_pt = resp_pt[:, 0].astype(np.float32)
+        resp_pt -= np.mean(resp_pt, axis=0, keepdims=True)
+        resp_pt /= np.max(np.abs(resp_pt), axis=0, keepdims=True)
+    ext1 = np.concatenate(ext1, axis=1).T if len(ext1) > 0 else np.array([])
+    if len(ext1) > 0:
+        ext1 = ext1[:, 1].astype(np.float32)
+        ext1[ext1 > 0] = 1
+
+    resp = resp_pt
+    card = ecg if len(ecg) > 0 else ext1
+    return resp, card
+
 def load_trajectory(metadata, metafile_paths: list[str]) -> dict | None:
     # get the k-space trajectory based on the metadata hash.
     for str_param in metadata.userParameters.userParameterString:
