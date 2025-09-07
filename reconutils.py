@@ -17,6 +17,13 @@ import connection
 import GIRF
 import mrdhelper
 
+# Waveform IDs for different physiological signals
+ECG_WAVEFORM_ID = 0
+PULSEOX_WAVEFORM_ID = 1
+RESP_WAVEFORM_ID = 2
+EXT1_WAVEFORM_ID = 3
+EXT2_WAVEFORM_ID = 4
+RESPPT_WAVEFORM_ID = 12
 
 def data_acquisition_worker(conn: connection.Connection, data_queue: queue.Queue, stop_event: threading.Event):
     """Worker function for data acquisition using concurrent.futures."""
@@ -222,25 +229,64 @@ def process_frame_complex(group, frames: list, sens: npt.NDArray | None, device,
     image.attribute_string = xml
     return image
 
-def process_waveforms(ecg, ext1, resp_pt) -> tuple[npt.NDArray, npt.NDArray]:
+def process_waveforms(wf_list: list[ismrmrd.Waveform], acq_init_timestamp: float) -> tuple[npt.NDArray, npt.NDArray,  npt.NDArray,  npt.NDArray]:
+    ecg = []
+    resp_pt = []
+    ext1 = []
+    t_init_ecg = 0
+    ecg_sample_time = 0
+    t_init_resp = 0
+    resp_sample_time = 0
+    t_init_ext1 = 0
+    ext1_sample_time = 0
+
+    for arm in wf_list:
+        if arm.waveform_id == ECG_WAVEFORM_ID:
+            ecg.append(arm.data)
+            if t_init_ecg == 0:
+                t_init_ecg = arm.time_stamp*2.5e-3
+                ecg_sampling_time = arm.sample_time_us*1e-6
+        elif arm.waveform_id == RESPPT_WAVEFORM_ID:
+            resp_pt.append(arm.data)
+            if t_init_resp == 0:
+                t_init_resp = arm.time_stamp*2.5e-3
+                resp_sample_time = arm.sample_time_us*1e-6
+        elif arm.waveform_id == EXT1_WAVEFORM_ID:
+            ext1.append(arm.data)
+            if t_init_ext1 == 0:
+                t_init_ext1 = arm.time_stamp*2.5e-3
+                ext1_sample_time = arm.sample_time_us*1e-6
+
     ecg = np.concatenate(ecg, axis=1).T if len(ecg) > 0 else np.array([])
     if len(ecg) > 0:
         ecg = ecg[:, 0].astype(np.float32)
         ecg -= np.percentile(ecg, 5, axis=0)
         ecg /= np.max(np.abs(ecg), axis=0, keepdims=True)
+        t_ecg = np.arange(ecg.shape[0])*ecg_sample_time + t_init_ecg - acq_init_timestamp
+    else:
+        t_ecg = np.array([])
+
     resp_pt = np.concatenate(resp_pt, axis=1).T if len(resp_pt) > 0 else np.array([])
     if len(resp_pt) > 0:
         resp_pt = resp_pt[:, 0].astype(np.float32)
         resp_pt -= np.mean(resp_pt, axis=0, keepdims=True)
         resp_pt /= np.max(np.abs(resp_pt), axis=0, keepdims=True)
+        t_resp = np.arange(resp_pt.shape[0])*resp_sample_time + t_init_resp - acq_init_timestamp
+    else:
+        t_resp = np.array([])
+
     ext1 = np.concatenate(ext1, axis=1).T if len(ext1) > 0 else np.array([])
     if len(ext1) > 0:
         ext1 = ext1[:, 1].astype(np.float32)
         ext1[ext1 > 0] = 1
+        t_ext1 = np.arange(ext1.shape[0])*ext1_sample_time + t_init_ext1 - acq_init_timestamp
+    else:
+        t_ext1 = np.array([])
 
     resp = resp_pt
     card = ecg if len(ecg) > 0 else ext1
-    return resp, card
+    t_card = t_ecg if len(ecg) > 0 else t_ext1
+    return t_resp, resp, t_card, card
 
 def load_trajectory(metadata, metafile_paths: list[str]) -> dict | None:
     # get the k-space trajectory based on the metadata hash.

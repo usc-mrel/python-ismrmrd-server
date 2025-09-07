@@ -28,14 +28,6 @@ from pilottone import calc_fovshift_phase, pt
 # Folder for debug output files
 debugFolder = "/tmp/share/debug"
 
-# Waveform IDs for different physiological signals
-ECG_WAVEFORM_ID = 0
-PULSEOX_WAVEFORM_ID = 1
-RESP_WAVEFORM_ID = 2
-EXT1_WAVEFORM_ID = 3
-EXT2_WAVEFORM_ID = 4
-RESPPT_WAVEFORM_ID = 12
-
 def process(conn: connection.Connection, config, metadata):
     logging.disable(logging.DEBUG)
     
@@ -83,8 +75,6 @@ def process(conn: connection.Connection, config, metadata):
     kx = traj['kx'][:,:n_unique_angles]
     ky = traj['ky'][:,:n_unique_angles]
 
-
-
     # We get dwell time too late from MRD, as it comes with acquisition.
     # So we ask it from the metadata.
     try:
@@ -130,9 +120,7 @@ def process(conn: connection.Connection, config, metadata):
 
     # Discard phase correction lines and accumulate lines until we get fully sampled data
     frames = []
-    ecg = []
-    ext1 = []
-    resp_pt = []
+    time_stamp_acq = 0
     arm_counter = 0
     rep_counter = 0
     acq_counter = 0
@@ -188,12 +176,6 @@ def process(conn: connection.Connection, config, metadata):
                 elif type(arm) is ismrmrd.Waveform:
                     # Accumulate waveforms to send at the end
                     wf_list.append(arm)
-                    if arm.waveform_id == ECG_WAVEFORM_ID:
-                        ecg.append(arm.data)
-                    elif arm.waveform_id == RESPPT_WAVEFORM_ID:
-                        resp_pt.append(arm.data)
-                    elif arm.waveform_id == EXT1_WAVEFORM_ID:
-                        ext1.append(arm.data)
                     continue
                 elif type(arm) is not ismrmrd.Acquisition:
                     continue
@@ -212,6 +194,7 @@ def process(conn: connection.Connection, config, metadata):
                 # This is a good place to calculate FOV shift phase.
                 if (arm.scan_counter == 1):
                     phase_mod_rads = calc_fovshift_phase(kx, ky, arm)
+                    time_stamp_acq = arm.acquisition_time_stamp*2.5e-3 # Convert to seconds
 
 
                 if ((arm.scan_counter == 1) and (arm.data.shape[1]-pre_discard/2) == coord_gpu.shape[1]/2):
@@ -295,11 +278,10 @@ def process(conn: connection.Connection, config, metadata):
     logging.info('Reconstruction is finished.')
 
     # Prepare waveforms
-    # TODO: ECG time axis should be shifted to align with the acquisition. 
-    resp, card = reconutils.process_waveforms(ecg, ext1, resp_pt)
-    process_pilot_tone_signal(metadata, cfg, save_folder, coil_name, pt_sig, card, resp)
+    t_resp, resp, t_card, card = reconutils.process_waveforms(wf_list, time_stamp_acq)
+    process_pilot_tone_signal(metadata, cfg, save_folder, coil_name, pt_sig, t_card, card, t_resp, resp)
 
-def process_pilot_tone_signal(metadata, cfg, save_folder, coil_name, pt_sig, ecg=list(), resp_pt=list()):
+def process_pilot_tone_signal(metadata, cfg, save_folder, coil_name, pt_sig, t_ecg=list(), ecg=list(), t_resp=list(), resp_pt=list()):
     if len(pt_sig) > 0:
         logging.info("Processing pilot tone signal...")
         dt_pt = metadata.sequenceParameters.TR[0]*1e-3  # Convert TR from ms to seconds
@@ -363,14 +345,14 @@ def process_pilot_tone_signal(metadata, cfg, save_folder, coil_name, pt_sig, ecg
             fig, axs = plt.subplots(2, 1, figsize=(10, 8))
             axs[0].plot(time_pt, pt_respiratory/np.max(pt_respiratory), label='Respiratory Pilot Tone')
             if len(resp_pt) > 0:
-                time_resp = np.arange(0, resp_pt.shape[0])*2.5e-3
-                axs[0].plot(time_resp, resp_pt/np.max(resp_pt), label='Respiratory Beat Sensor', linestyle='--')
+                # time_resp = np.arange(0, resp_pt.shape[0])*2.5e-3
+                axs[0].plot(t_resp, resp_pt/np.max(resp_pt), label='Respiratory Beat Sensor', linestyle='--')
             axs[0].legend()
             axs[0].set_title('Respiratory Signal')
             axs[1].plot(time_pt, pt_cardiac/np.max(pt_cardiac), label='Cardiac Pilot Tone')
             if len(ecg) > 0:
-                time_ecg = np.arange(0, ecg.shape[0])*2.5e-3
-                axs[1].plot(time_ecg, ecg, label='ECG Signal', linestyle='--')
+                # time_ecg = np.arange(0, ecg.shape[0])*2.5e-3
+                axs[1].plot(t_ecg, ecg, label='ECG Signal', linestyle='--')
             axs[1].legend()
             axs[1].set_title('Cardiac Signal')
             axs[1].set_xlabel('Time [s]')
