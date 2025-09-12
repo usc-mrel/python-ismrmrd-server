@@ -133,6 +133,9 @@ def process_group(group, frames: list, sens: npt.NDArray | None, device, rep, co
         data = data.astype(np.int16)
 
     data = sp.to_device(data)
+    data_prct = np.percentile(data, [1,99])
+    wdw_w = data_prct[1] - data_prct[0]
+    wdw_c = (data_prct[1] + data_prct[0])//2
 
     # Format as ISMRMRD image data
     # data has shape [RO PE], i.e. [x y].
@@ -151,8 +154,8 @@ def process_group(group, frames: list, sens: npt.NDArray | None, device, rep, co
     # Set ISMRMRD Meta Attributes
     meta = ismrmrd.Meta({'DataRole':               'Image',
                          'ImageProcessingHistory': ['FIRE', 'PYTHON', 'simplenufft1arm'],
-                         'WindowCenter':           str((maxVal+1)/2),
-                         'WindowWidth':            str((maxVal+1)),
+                         'WindowCenter':           str(wdw_c),
+                         'WindowWidth':            str(wdw_w),
                          'NumArmsPerFrame':        str(config['reconstruction']['arms_per_frame']),
                          'GriddingWindowShift':    str(config['reconstruction']['window_shift']), 
                          'ImageScaleFactor':       str(dscale)
