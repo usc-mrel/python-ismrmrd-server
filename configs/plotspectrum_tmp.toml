@@ -1,0 +1,3 @@
+metafile_paths = ["seq_meta"]
+save_raw = false
+skip_TR = 10
