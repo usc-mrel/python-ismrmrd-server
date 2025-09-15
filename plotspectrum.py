@@ -12,20 +12,15 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 import connection
-from pilottone.signal import cfft, rssq
 
 matplotlib.use("Agg")  # Use non-interactive backend for saving figures
 
-from scipy.fft import fftfreq, fftshift
+from scipy.fft import fftfreq, fftshift, fft, ifftshift
 
 import reconutils
-from pilottone import calc_fovshift_phase
 
 # Folder for debug output files
 debugFolder = "/tmp/share/debug"
-
-skip_TR = 10  # Only process every n-th TR for display
-
 
 def process(conn: connection.Connection, config, metadata):
     logging.disable(logging.DEBUG)
@@ -38,34 +33,6 @@ def process(conn: connection.Connection, config, metadata):
         return
 
     skip_TR = cfg["skip_TR"]
-    metafile_paths = cfg["metafile_paths"]
-
-    # start = time.perf_counter()
-    traj = reconutils.load_trajectory(metadata, metafile_paths)
-    if traj is None:
-        logging.error("Failed to load trajectory.")
-        return
-
-    n_unique_angles = int(traj["param"]["interleaves"][0, 0][0, 0])
-
-    kx = traj["kx"][:, :n_unique_angles]
-    ky = traj["ky"][:, :n_unique_angles]
-
-    # We get dwell time too late from MRD, as it comes with acquisition.
-    # So we ask it from the metadata.
-    try:
-        dt = traj["param"]["dt"][0, 0][0, 0]
-    except KeyError:
-        dt = 1e-6  # [s]
-        logging.warning(
-            "Dwell time (dt) not found in trajectory parameters, using default value of 1 us."
-        )
-
-    pre_discard = traj["param"]["pre_discard"][0, 0][0, 0]
-
-    # end = time.perf_counter()
-    # logging.debug("Elapsed time during recon prep: %f secs.", end-start)
-    # print(f"Elapsed time during recon prep: {end-start} secs.")
 
     # Set plot
     # Properties of report image to create
@@ -73,21 +40,11 @@ def process(conn: connection.Connection, config, metadata):
     height = 512  # pixels
 
     # Create a blank image with white background
-    # plt.ion()
     plt.style.use("dark_background")
     dpi = 100
     fig, ax = plt.subplots(figsize=(width / dpi, height / dpi), dpi=dpi)
+    line1 = None
 
-    # Display the blank image to set image size
-    # ax.imshow(np.zeros((height, width, 3), dtype=np.uint8))
-    freqs = fftshift(fftfreq(kx.shape[0], d=dt))
-    (line1,) = ax.plot(freqs*1e-3, np.zeros_like(freqs))
-    plt.xlabel("Frequency [kHz]")
-    ax.set_ylim(0, 14)
-    # plt.subplots_adjust(left=0, right=1, top=1, bottom=0)
-
-    # Discard phase correction lines and accumulate lines until we get fully sampled data
-    arm_counter = 0
     rep_counter = 0
     acq_counter = 0
 
@@ -167,16 +124,15 @@ def process(conn: connection.Connection, config, metadata):
 
                 # This is a good place to calculate FOV shift phase.
                 if arm.scan_counter == 1:
-                    phase_mod_rads = calc_fovshift_phase(kx, ky, arm)
-
-                adata = arm.data[:, pre_discard:] * phase_mod_rads[None, :, arm_counter]
-                arm_counter += 1
-                if arm_counter == n_unique_angles:
-                    arm_counter = 0
+                    # Display the blank image to set image size
+                    dt = arm.sample_time_us*1e-6
+                    freqs = fftshift(fftfreq(arm.data.shape[1], d=dt))
+                    (line1,) = ax.plot(freqs*1e-3, np.zeros_like(freqs))
+                    plt.xlabel("Frequency [kHz]")
+                    ax.set_ylim(0, 14)
 
                 if ((arm.scan_counter) % skip_TR) == 0:
-                    # TODO: Plot spectrum here.
-                    image = process_spectrum(fig, line1, adata, arm, rep_counter)
+                    image = process_spectrum(fig, line1, arm.data, arm, rep_counter)
                     logging.debug("Sending image to client:\n%s", image)
                     conn.send_image(image)
 
@@ -208,7 +164,6 @@ def process(conn: connection.Connection, config, metadata):
                     f"Error while waiting for acquisition task to complete: {e}"
                 )
 
-    # plt.show(block=True)
     conn.send_close()
     logging.info("Reconstruction is finished.")
 
@@ -249,10 +204,6 @@ def process_spectrum(fig, line1, adata, acq, rep_counter):
     if update_ylim:
         ax.set_ylim(0, data_max_padded)
         logging.debug(f"Updated y-limits to [0, {data_max_padded:.3f}] for rep {rep_counter}")
-
-    # Always update x-axis limits in case data length changes
-    # ax.relim()
-    # ax.autoscale(axis='x')
     
     # Invoke a draw to create a buffer we can copy the pixel data from
     fig.canvas.draw()
@@ -277,7 +228,7 @@ def process_spectrum(fig, line1, adata, acq, rep_counter):
     # data has shape [PE RO phs], i.e. [y x].
     # from_array() should be called with 'transpose=False' to avoid warnings, and when called
     # with this option, can take input as: [cha z y x], [z y x], or [y x]
-    mrdImg = ismrmrd.Image.from_array(imgGray, transpose=True)
+    mrdImg = ismrmrd.Image.from_array(imgGray, transpose=False)
 
     # Set the minimum appropriate ImageHeader information without using a reference acquisition/image as a starting point
     # Note mrdImg.getHead().matrix_size should be used instead of the convenience mrdImg.matrix_size because the latter
@@ -340,3 +291,11 @@ def process_spectrum(fig, line1, adata, acq, rep_counter):
     imagesOut.append(mrdImg)
 
     return imagesOut
+
+def cfft(data, axis):
+    '''Centered FFT.'''
+    return fftshift(fft(ifftshift(data, axis), None, axis), axis)
+
+def rssq(data, axis):
+    '''Root sum of squares along the given axis.'''
+    return np.sqrt(np.sum(np.abs(data)**2, axis=axis))
