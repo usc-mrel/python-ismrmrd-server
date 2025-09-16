@@ -37,7 +37,8 @@ def data_acquisition_worker(conn: connection.Connection, data_queue: queue.Queue
             data_queue.put(arm)
             
             # Yield control to avoid hogging CPU
-            # time.sleep(0.001)
+            for _ in range(500):
+                continue
             
     except Exception as e:
         logging.error(f"Error in data acquisition worker: {e}")
