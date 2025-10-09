@@ -33,6 +33,7 @@ def process(conn: connection.Connection, config, metadata):
         return
 
     skip_TR = cfg["skip_TR"]
+    ch_i = cfg["channel"]
 
     # Set plot
     # Properties of report image to create
@@ -122,17 +123,26 @@ def process(conn: connection.Connection, config, metadata):
                 if arm.scan_counter % 1000 == 0:
                     logging.info("Processing acquisition %d", arm.scan_counter)
 
-                # This is a good place to calculate FOV shift phase.
                 if arm.scan_counter == 1:
                     # Display the blank image to set image size
                     dt = arm.sample_time_us*1e-6
                     freqs = fftshift(fftfreq(arm.data.shape[1], d=dt))
                     (line1,) = ax.plot(freqs*1e-3, np.zeros_like(freqs))
                     plt.xlabel("Frequency [kHz]")
+                    if ch_i < 0:
+                        plt.title("RSS magnitude")
+                    else:
+                        plt.title(f"Channel {metadata.acquisitionSystemInformation.coilLabel[ch_i].coilName} magnitude")
+                    
                     ax.set_ylim(0, 14)
 
                 if ((arm.scan_counter) % skip_TR) == 0:
-                    image = process_spectrum(fig, line1, arm.data, arm, rep_counter)
+                    spec = cfft(arm.data, axis=1)
+                    if ch_i < 0:
+                        y_data = rssq(spec, axis=0)
+                    else:
+                        y_data = np.abs(spec[ch_i])
+                    image = process_spectrum(fig, line1, y_data, arm, rep_counter)
                     logging.debug("Sending image to client:\n%s", image)
                     conn.send_image(image)
 
@@ -168,9 +178,8 @@ def process(conn: connection.Connection, config, metadata):
     logging.info("Reconstruction is finished.")
 
 
-def process_spectrum(fig, line1, adata, acq, rep_counter):
-    spec = cfft(adata, axis=1)
-    y_data = rssq(spec, axis=0)
+def process_spectrum(fig, line1, y_data, acq, rep_counter):
+
     line1.set_ydata(y_data)
     
     # Get current y-axis limits
