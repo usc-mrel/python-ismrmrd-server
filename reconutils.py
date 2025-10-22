@@ -237,6 +237,9 @@ def process_waveforms(wf_list: list[ismrmrd.Waveform], acq_init_timestamp: float
     ecg = []
     resp_pt = []
     ext1 = []
+    pulseox = []
+    t_init_pox = 0
+    pulseox_sample_time = 0
     t_init_ecg = 0
     ecg_sample_time = 0
     t_init_resp = 0
@@ -250,6 +253,11 @@ def process_waveforms(wf_list: list[ismrmrd.Waveform], acq_init_timestamp: float
             if t_init_ecg == 0:
                 t_init_ecg = arm.time_stamp*2.5e-3
                 ecg_sampling_time = arm.sample_time_us*1e-6
+        elif arm.waveform_id == PULSEOX_WAVEFORM_ID:
+            pulseox.append(arm.data)
+            if t_init_pox == 0:
+                t_init_pox = arm.time_stamp*2.5e-3
+                pulseox_sample_time = arm.sample_time_us*1e-6
         elif arm.waveform_id == RESPPT_WAVEFORM_ID:
             resp_pt.append(arm.data)
             if t_init_resp == 0:
@@ -263,12 +271,27 @@ def process_waveforms(wf_list: list[ismrmrd.Waveform], acq_init_timestamp: float
 
     ecg = np.concatenate(ecg, axis=1).T if len(ecg) > 0 else np.array([])
     if len(ecg) > 0:
-        ecg = ecg[:, 0].astype(np.float32)
-        ecg -= np.percentile(ecg, 5, axis=0)
-        ecg /= np.max(np.abs(ecg), axis=0, keepdims=True)
-        t_ecg = np.arange(ecg.shape[0])*ecg_sample_time + t_init_ecg - acq_init_timestamp
+        if np.isnan(ecg).all():
+            t_ecg = np.array([])
+        else:
+            ecg = ecg[:, 0].astype(np.float32)
+            ecg -= np.percentile(ecg, 5, axis=0)
+            ecg /= np.max(np.abs(ecg), axis=0, keepdims=True)
+            t_ecg = np.arange(ecg.shape[0])*ecg_sample_time + t_init_ecg - acq_init_timestamp
     else:
         t_ecg = np.array([])
+
+    pulseox = np.concatenate(pulseox, axis=1).T if len(pulseox) > 0 else np.array([])
+    if len(pulseox) > 0:
+        if not np.isnan(pulseox).all():
+            pulseox = pulseox[:, 0].astype(np.float32)
+            pulseox -= np.percentile(pulseox, 5, axis=0)
+            pulseox /= np.max(np.abs(pulseox), axis=0, keepdims=True)
+            t_pox = np.arange(pulseox.shape[0])*pulseox_sample_time + t_init_pox - acq_init_timestamp
+        else:
+            t_pox = np.array([])
+    else:
+        t_pox = np.array([])
 
     resp_pt = np.concatenate(resp_pt, axis=1).T if len(resp_pt) > 0 else np.array([])
     if len(resp_pt) > 0:
@@ -288,8 +311,8 @@ def process_waveforms(wf_list: list[ismrmrd.Waveform], acq_init_timestamp: float
         t_ext1 = np.array([])
 
     resp = resp_pt
-    card = ecg if len(ecg) > 0 else ext1
-    t_card = t_ecg if len(ecg) > 0 else t_ext1
+    card = ecg if (len(ecg) > 0 and not np.isnan(ecg).all()) else (pulseox if len(pulseox) > 0 else ext1)
+    t_card = t_ecg if (len(ecg) > 0 and not np.isnan(ecg).all()) else (t_pox if len(pulseox) > 0 else t_ext1)
     return t_resp, resp, t_card, card
 
 def load_trajectory(metadata, metafile_paths: list[str]) -> dict | None:
