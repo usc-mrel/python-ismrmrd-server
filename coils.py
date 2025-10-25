@@ -286,3 +286,7 @@ def centered_crop(image, crop_size):
     start = center - np.array(crop_size) // 2
     end = start + np.array(crop_size)
     return image[tuple(slice(s, e) for s, e in zip(start, end))]
+
+def rssq(data, axis):
+    '''Root sum of squares along the given axis.'''
+    return np.sqrt(np.sum(np.abs(data)**2, axis=axis))
