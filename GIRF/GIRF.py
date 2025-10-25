@@ -6,6 +6,22 @@ from scipy.fft import fft, fftshift, ifft, ifftshift
 import pathlib
 
 def apply_GIRF(gradients_nominal: np.ndarray, dt: float, R: np.ndarray, girf_file: str | None = None, tRR: float = 0):
+    """
+    GIRF correction. 
+    
+    Parameters:
+    -----------
+        gradients_nominal: Nominal gradient waveforms (samples, interleaves, axes)
+        dt: Sampling time interval [s]
+        R: Rotation matrix (3x3) or dict containing 'R' key
+        girf_file: Path to GIRF calibration file (optional)
+        tRR: Receiver-related delay [samples] (default: 0)
+    
+    Returns:
+    -----------
+        kPred: Predicted k-space trajectory
+        GPred: Predicted gradient waveforms
+    """
     # Handle "nasty" co-opting of R-variable to include field info.
     if isinstance(R, dict):
         R = R['R']
@@ -34,19 +50,19 @@ def apply_GIRF(gradients_nominal: np.ndarray, dt: float, R: np.ndarray, girf_fil
         pad_factor = 1.5 * (samples * dt) / (dtGIRF * l_GIRF)
         new_GIRF = np.zeros((round(l_GIRF * pad_factor), 3))
 
-        for i in range(3):
-            fft_GIRF = np.fft.fftshift(np.fft.ifft(np.fft.ifftshift(GIRF[:, i])))
-            zeropad = round(abs((l_GIRF - len(new_GIRF)) / 2))
-            temp = np.zeros(len(new_GIRF))
-            
-            # Smoothing of padding
-            H_size = 200
-            H = hann(H_size)
-            fft_GIRF[:H_size//2] *= H[:H_size//2]
-            fft_GIRF[-(H_size//2 - 1):] *= H[H_size//2 + 1:]
-            
-            temp[zeropad:zeropad + l_GIRF] = fft_GIRF
-            new_GIRF[:, i] = np.fft.fftshift(np.fft.fft(np.fft.ifftshift(temp)))
+        # Vectorized: Process all 3 axes at once
+        fft_GIRF = np.fft.fftshift(np.fft.ifft(np.fft.ifftshift(GIRF, axes=0), axis=0), axes=0)
+        zeropad = round(abs((l_GIRF - len(new_GIRF)) / 2))
+        temp = np.zeros((len(new_GIRF), 3))
+        
+        # Smoothing of padding
+        H_size = 200
+        H = hann(H_size)
+        fft_GIRF[:H_size//2, :] *= H[:H_size//2, np.newaxis]
+        fft_GIRF[-(H_size//2 - 1):, :] *= H[H_size//2 + 1:, np.newaxis]
+        
+        temp[zeropad:zeropad + l_GIRF, :] = fft_GIRF
+        new_GIRF = np.fft.fftshift(np.fft.fft(np.fft.ifftshift(temp, axes=0), axis=0), axes=0)
 
         GIRF = new_GIRF
 
@@ -55,9 +71,6 @@ def apply_GIRF(gradients_nominal: np.ndarray, dt: float, R: np.ndarray, girf_fil
 
     ADCshift = 0.85e-6 + 0.5 * dt + tRR * dt  # NCO Clock shift
 
-    # Nominal = np.zeros((samples, 3), dtype=float)
-    Predicted = np.zeros((samples, 3), dtype=float)
-    # GNom = np.zeros((samples, 3, interleaves), dtype=float)
     GPred = np.zeros((samples, 3, interleaves), dtype=float)
 
     start = time.perf_counter()
@@ -75,75 +88,88 @@ def apply_GIRF(gradients_nominal: np.ndarray, dt: float, R: np.ndarray, girf_fil
     index_range3 = np.arange(-np.floor(samples/2), np.ceil(samples/2), dtype=int) + int(np.floor(L2/2)) + 1
 
     w = np.arange(-np.floor(L1/2), np.ceil(L1/2)) * dw
-    for l in range(interleaves):
-        G0 = gradients_nominal[:, l, :].copy()
-        G0 = np.concatenate((G0, np.zeros((gradients_nominal.shape[0], 1))), axis=1)
-        G0 = np.dot(R, G0.T).T
+    
+    # Vectorized approach: Prepare all gradients
+    G0_all = gradients_nominal.copy()  # (samples, interleaves, gs)
+    
+    if G0_all.shape[-1] == 2:
+        # Pad to 3 axes for all interleaves at once
+        G0_all = np.concatenate((G0_all, np.zeros((gradients_nominal.shape[0], interleaves, 1))), axis=2)
+    
+    # Apply rotation to all interleaves at once using einsum for efficiency
+    # G0_all is (samples, interleaves, 3), R is (3, 3)
+    # Result should be (samples, interleaves, 3)
+    G0_rotated = np.einsum('ij,klj->kli', R, G0_all)
+    
+    # Pre-compute GIRF1 for all axes (same for all interleaves)
+    GIRF1_all = np.zeros((L1, 3), dtype=np.complex64)
+    
+    if dt > dtGIRF:
+        GIRF1_all = GIRF[round(l_GIRF/2 - L1/2 + 1):round(l_GIRF/2 + L1/2), :]
+        temp = hann(10)
+        GIRF1_all[0, :] = 0
+        GIRF1_all[-1, :] = 0
+        GIRF1_all[1:round(len(temp)/2) + 1, :] *= temp[:round(len(temp)/2), np.newaxis]
+        GIRF1_all[-round(len(temp)/2):-1, :] *= temp[round(len(temp)/2) + 1:, np.newaxis]
+    else:
+        GIRF1_all[index_range2, :] = GIRF
+    
+    # Precompute phase shift term
+    phase_shift = np.exp(1j * ADCshift * 2 * np.pi * w)
+    
+    # ========================================================================
+    # OPTIMIZED VECTORIZED: Process all 3 axes at once per interleave
+    # ========================================================================
+    # This approach vectorizes over the 3 axes (the tight inner loop)
+    # but keeps the interleave loop to avoid large memory allocations
+    # and 3D FFT overhead which can be slower than multiple 2D FFTs
+    
+    # Pre-allocate output to avoid repeated allocation
+    GPred = np.zeros((samples, 3, interleaves), dtype=float)
+    
+    # Process each interleave with all 3 axes vectorized
+    for interleave_idx in range(interleaves):
+        # Get rotated gradients for this interleave: (samples, 3)
+        G0 = G0_rotated[:, interleave_idx, :]
+        
+        # Prepare gradient array for all 3 axes: (L1, 3)
+        G_all = np.zeros((L1, 3))
+        G_all[index_range1, :] = G0
+        
+        # Make waveforms periodic for all axes simultaneously
+        # Broadcasting: (3,) * (200,) -> (200, 3)
+        H = G_all[index_range1[-1], :] * hanning400[:, np.newaxis]
+        end_indices = index_range1[-1] + np.arange(1, len(hanning400)//2 + 1)
+        G_all[end_indices, :] = H[len(hanning400)//2:, :]
+        
+        # FFT for all 3 axes at once: (L1, 3)
+        I_all = fftshift(fft(ifftshift(G_all, axes=0), axis=0), axes=0)
+        
+        # Apply GIRF and phase shift to all axes: (L1, 3) * (L1, 3) * (L1, 1)
+        P_all = I_all * GIRF1_all * phase_shift[:, np.newaxis]
+        
+        # Prepare for inverse FFT: (L2, 3)
+        PredGrad_all = np.zeros((L2, 3), dtype=np.complex64)
+        zeropad = round(abs((L1 - L2) / 2))
+        PredGrad_all[zeropad:zeropad + L1, :] = P_all
+        
+        # Inverse FFT for all axes: (L2, 3)
+        PredGrad_all = fftshift(ifft(ifftshift(PredGrad_all, axes=0), axis=0), axes=0)
+        PredGrad_all = np.real(PredGrad_all)
+        
+        # Extract and rotate: (samples, 3)
+        Predicted = PredGrad_all[index_range3, :]
+        
+        # Apply inverse rotation and store
+        GPred[:, :, interleave_idx] = np.dot(Predicted, R)
 
-        for ax in range(3):
-
-            G = np.zeros(L1)
-            
-            # SPIRAL OUT
-            G[index_range1] = G0[:, ax]
-
-            # Make a waveform periodic by returning to zero
-            H = G[index_range1[-1]] * hanning400
-            G[index_range1[-1] + np.arange(1, len(H)//2 + 1)] = H[len(H)//2:]
-
-            I = fftshift(fft(ifftshift(G))) 
-
-            GIRF1 = np.zeros(L1, dtype=np.complex64)
-            
-            if dt > dtGIRF:
-                GIRF1 = GIRF[round(l_GIRF/2 - L1/2 + 1):round(l_GIRF/2 + L1/2), ax]
-                temp = hann(10)
-                GIRF1[0] = 0
-                GIRF1[-1] = 0
-                GIRF1[1:round(len(temp)/2) + 1] *= temp[:round(len(temp)/2)]
-                GIRF1[-round(len(temp)/2):-1] *= temp[round(len(temp)/2) + 1:]
-            else:
-                GIRF1[index_range2] = GIRF[:, ax]
-
-            P = I * GIRF1 * np.exp(1j * ADCshift * 2 * np.pi * w)
-
-            PredGrad = np.zeros(L2, dtype=np.complex64)
-            # NomGrad = np.zeros(L2, dtype=np.complex64)
-            zeropad = round(abs((L1 - L2) / 2))
-
-            PredGrad[zeropad:zeropad + len(P)] = P
-            # NomGrad[zeropad:zeropad + len(I)] = I
-            
-            PredGrad = fftshift(ifft(ifftshift(PredGrad)))
-
-            # NomGrad = np.fft.fftshift(np.fft.ifft(np.fft.ifftshift(NomGrad))) * L2
-
-            # multiplier = np.where(np.real(PredGrad) > 0, 1, -1)
-            # PredGrad = np.abs(PredGrad) * multiplier
-            PredGrad = np.real(PredGrad)
-
-            # multiplier = np.where(np.real(NomGrad) > 0, 1, -1)
-            # NomGrad = np.abs(NomGrad) * multiplier
-
-            # Nominal[:, ax] = NomGrad[index_range3]
-            Predicted[:, ax] = PredGrad[index_range3]
-
-
-        # GNom[:, :, l] = np.dot(R.T, Nominal.T).T
-        # GPred[:, :, l] = np.dot(R.T, Predicted.T).T
-        GPred[:, :, l] = np.dot(Predicted, R)
-
-    # kNom = np.cumsum(GNom, axis=0)
     kPred = np.cumsum(GPred, axis=0)
 
     gamma = 2.67522212e8  # Gyromagnetic ratio for 1H [rad/sec/T]
     kPred = 0.01 * (gamma / (2 * np.pi)) * (kPred * 0.01) * dt
-    # kNom = 0.01 * (gamma / (2 * np.pi)) * (kNom * 0.01) * dt
 
     kPred = np.transpose(kPred, (0, 2, 1))
-    # kNom = np.transpose(kNom, (0, 2, 1))
     GPred = np.transpose(GPred, (0, 2, 1))
-    # GNom = np.transpose(GNom, (0, 2, 1))
 
     end = time.perf_counter()
     print(f"Elapsed time during GIRF apply: {end-start} secs.")
