@@ -12,6 +12,8 @@ import time
 import GIRF.GIRF as GIRF
 import reconutils
 from coils import rssq
+from sigpy.mri.dcf import pipe_menon_dcf
+import sigpy as sp
 
 # Folder for debug output files
 debugFolder = "/tmp/share/debug"
@@ -62,6 +64,8 @@ def process(connection, config, metadata):
     msize_inplane = np.int16(10 * traj['param']['fov'][0,0][0,0] / traj['param']['spatial_resolution'][0,0][0,0] * cfg['reconstruction']['fov_oversampling'])
     msize_slab = np.int16(10 * traj['param']['fov'][0,0][0,1] / traj['param']['spatial_resolution'][0,0][0,0] * cfg['reconstruction']['fov_oversampling'])
     delta_r = traj['param']['spatial_resolution'][0,0][0,0]
+
+
     # Prepare gradients and variables if GIRF is requested. 
     # Unfortunately, we don't know rotations until the first data, so we can't prepare them yet.
     if APPLY_GIRF:
@@ -72,20 +76,19 @@ def process(connection, config, metadata):
 
     ktraj = np.stack((kx, -ky, kz), axis=2)
 
+    # Calculate DCF
+    if cfg['reconstruction']['nufft_type'] == 'adjoint':
+        w_pipe = pipe_menon_dcf(ktraj, img_shape=None, device=sp.Device(0), max_iter=30).get()
+
     # find max ktraj value
     kmax = np.max(np.linalg.vector_norm(ktraj, axis=2, ord=2))
     # swap 0 and 1 axes to make repetitions the first axis (repetitions, interleaves, 2)
     ktraj = np.swapaxes(ktraj, 0, 1)
     ktraj = 0.5 * (ktraj / kmax) * msize_inplane
 
-    # nchannel = metadata.acquisitionSystemInformation.receiverChannels
     pre_discard = traj['param']['pre_discard'][0,0][0,0]
     w = traj['w']
     w = np.reshape(w, (1,w.shape[1]))
-    # end = time.perf_counter()
-    # logging.debug("Elapsed time during recon prep: %f secs.", end-start)
-    # print(f"Elapsed time during recon prep: {end-start} secs.")
-
 
     # Discard phase correction lines and accumulate lines until we get fully sampled data
     arm_counter = 0
@@ -146,12 +149,8 @@ def process(connection, config, metadata):
     coord = np.array(coord, dtype=np.float32)
     coord = np.transpose(coord, axes=(1, 0, 2))
 
-    nc = data.shape[0]
-    nk = data.shape[1]
-
     kdata = np.transpose(data, (2, 0, 1))           # [ndisks*n_arms, n_ch, n_samples]
     kdata = np.transpose(kdata, (2, 0, 1))       # [n_samples, ndisks*n_arms, n_ch]
-    # ksp_all  = np.reshape(np.transpose(np.squeeze(kdata), (0, 1, 3, 2)), [1, nk, -1, nc])
 
     kdata = kdata[None,:,:,:,None,None,None,None,None,None,None]
     kloc = np.transpose(coord, (1, 0, 2)) # [ndisks*n_arms, n_samples, 2]
@@ -171,9 +170,8 @@ def process(connection, config, metadata):
 
 
     ################################################################################
-    # CS Reconstruction
     #
-    # TODO: nothing limits the time frame we add here.
+    # TODO: Coil sensitivity maps. Currently only rssq.
     # RSSQ for now.
     # _, rtnlinv_sens_32 = bart.bart(2, 'nlinv -a 32 -b 16 -S -d4 -i13 -x 32:32:1 -t',
     #         traj_all, ksp_all)
@@ -189,15 +187,18 @@ def process(connection, config, metadata):
 
 
     # Do NUFFT
-    img = bart.bart(1, f"nufft -i -g -t -m {cfg['reconstruction']['num_iter']} -x {msize_inplane}:{msize_inplane}:{msize_inplane}", kloc, kdata)
+    if cfg['reconstruction']['nufft_type'] == 'adjoint':
+        img = bart.bart(1, f"nufft -a -g -t -x {msize_inplane}:{msize_inplane}:{msize_inplane}", kloc, kdata * w_pipe[None,:,:,None,None,None,None,None,None,None,None])
+    else:
+        img = bart.bart(1, f"nufft -i -g -t -m {cfg['reconstruction']['num_iter']} -x {msize_inplane}:{msize_inplane}:{msize_inplane}", kloc, kdata)
     img = rssq(img, axis=3)
     maxVal = 2**12 - 1
     img *= maxVal/img.max()
     img = np.around(img)
     # Reshape, process and send images.
-
+    # TODO: This assumes the 3rd dimension is slice dimension. Any other dimension can be sliced. Investigate.
+    # TODO: Edge slices that are not properly encoded can be skipped here.
     for ii in range(img.shape[2]):
-        # update time stamp
         image = process_group(grp, img[None,:,:,ii], ii, 0, img.shape[2], delta_r, metadata)
         connection.send_image(image)
 
@@ -248,6 +249,8 @@ def process_group(group, data, rep, image_series_idx, Nslc, resolution, metadata
     # Set field of view
     # Field-of-view in the metadata is as given in .seq file, logical coordinates in mm.
     # Similarly FoV in image header is, physical size (in mm) in each of the 3 dimensions in the image
+    # TODO: I believe this will always be correct, but need to verify.
+    # TODO: Fix if given FOVs are not isotropic, i.e. FoV set are for "encoded", not "reconned" space. It can be set as max of FoVs.
     image.field_of_view = (ctypes.c_float(metadata.encoding[0].reconSpace.fieldOfView_mm.x), 
                             ctypes.c_float(metadata.encoding[0].reconSpace.fieldOfView_mm.y), 
                             ctypes.c_float(resolution))
@@ -255,6 +258,8 @@ def process_group(group, data, rep, image_series_idx, Nslc, resolution, metadata
     # Set slice position
     # Center of the excited volume, in (left, posterior, superior) (LPS) coordinates relative to isocenter in millimeters. 
     # NB this is different than DICOM’s ImageOrientationPatient, which defines the center of the first (typically top-left) voxel.
+    # TODO: This assumes slice direction is along superior axis. Can be generalized.
+    # TODO: We step by resolution assuming during recon we kept it the same. Safer way may be dividing FoV by the number of slices for the step size.
     image.position[1] = ctypes.c_float(image.position[1] + resolution * (rep-Nslc//2))
 
     # Set ISMRMRD Meta Attributes
