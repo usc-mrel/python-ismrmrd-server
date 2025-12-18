@@ -6,3 +6,12 @@
 *.tar
 *.zip
 data/
+seq_meta/
+testdata/
+waveforms/
+.vscode/
+configs/
+.micromamba/
+venv/
+*.h5
+*.img

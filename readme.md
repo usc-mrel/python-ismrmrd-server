@@ -1,20 +1,25 @@
 ##  <a name='TableofContents'></a> Table of Contents
 <!-- vscode-markdown-toc -->
-* 1. [Getting Started](#GettingStarted)
+1. [Getting Started](#GettingStarted)
 	* 1.1. [Reconstruct a phantom raw data set using the MRD client/server pair](#ReconstructaphantomrawdatasetusingtheMRDclientserverpair)
 	* 1.2. [Creating a custom reconstruction/analysis module](#Creatingacustomreconstructionanalysismodule)
 		* 1.2.1. [Adding a raw k-space filter](#Addingarawk-spacefilter)
 		* 1.2.2. [Adding an image processing filter](#Addinganimageprocessingfilter)
 	* 1.3. [Using raw data from an MRI scanner](#UsingrawdatafromanMRIscanner)
 	* 1.4. [Using DICOM images as input data](#UsingDICOMimagesasinputdata)
-* 2. [Setting up a working environment for the Python MRD client/server](#SettingupaworkingenvironmentforthePythonMRDclientserver)
-    * 2.1. [Setting up a devcontainer environment](#Settingupadevcontainerenvironment)
+2. [Setting up a working environment for the Python MRD client/server](#SettingupaworkingenvironmentforthePythonMRDclientserver)
+	* 2.1. [Setting up a devcontainer environment](#Settingupadevcontainerenvironment)
 	* 2.2. [Setting up a conda environment](#Settingupacondaenvironment)
 	* 2.3. [Setting up a Docker environment](#SettingupaDockerenvironment)
-* 3. [Code design](#Codedesign)
-* 4. [Saving incoming data](#Savingincomingdata)
-* 5. [Startup scripts](#Startupscripts)
-* 6. [Building a custom Docker image](#CustomDockers)
+
+3. [Spiral Reconstruction](#SpiralReconstruction)
+     * 3.1 [Spiral View-Sharing Reconstruction](#SpiralVS)
+     * 3.2 [Spiral Temporal Finite Difference (TFD) Reconstruction](#SpiralTFD)
+     * 3.3 [Spiral Dual Temporally Constrained Reconstruction](#SpiralXDGRASP)
+4. [Code design](#Codedesign)
+5. [Saving incoming data](#Savingincomingdata)
+6. [Startup scripts](#Startupscripts)
+7. [Building a custom Docker image](#CustomDockers)
 
 <!-- vscode-markdown-toc-config
 	numbering=true
@@ -90,7 +95,7 @@ In this example, a Hanning filter is applied to raw k-space data.
 
 1. The NumPy library contains a [Hanning filter](https://numpy.org/doc/stable/reference/generated/numpy.hanning.html) that can be applied to k-space data before the Fourier transform.
 
-1. In the ``process_raw()`` function the ``filterkspace.py`` file, find the [section where raw k-space data is already sorted into a Cartesian grid, just prior to Fourier transform](https://github.com/kspaceKelvin/python-ismrmrd-server/blob/27454bd9f1a2c7fd3928bfa0767840b0d015d988/invertcontrast.py#L177).  Add a Hanning filter and perform element-wise multiplication of the k-space data with the filter:
+1. In the ``process_raw()`` function the ``filterkspace.py`` file, find the [section where raw k-space data is already sorted into a Cartesian grid, just prior to Fourier transform](https://github.com/usc-mrel/python-ismrmrd-server/blob/27454bd9f1a2c7fd3928bfa0767840b0d015d988/invertcontrast.py#L177).  Add a Hanning filter and perform element-wise multiplication of the k-space data with the filter:
 
     **Old code:**
     ```
@@ -115,7 +120,7 @@ In this example, a Hanning filter is applied to raw k-space data.
     data = fft.ifftshift(data, axes=(1, 2))
     ```
 
-1. The module used by the server is specified by the ``config`` option on the client side.  The Server class used in this code [attempts to find](https://github.com/kspaceKelvin/python-ismrmrd-server/blob/6684b4d17c0591e64b34bc06fdd06d78a2d8c659/server.py#L105) a Python module matching the name of the config file if it doesn't match one of the default examples.  [Start the server](https://github.com/kspaceKelvin/python-ismrmrd-server#ReconstructaphantomrawdatasetusingtheMRDclientserverpair) and in a separate window, run the client with the ``-c filterkspace`` option to specify the new config:
+1. The module used by the server is specified by the ``config`` option on the client side.  The Server class used in this code [attempts to find](https://github.com/usc-mrel/python-ismrmrd-server/blob/6684b4d17c0591e64b34bc06fdd06d78a2d8c659/server.py#L105) a Python module matching the name of the config file if it doesn't match one of the default examples.  [Start the server](https://github.com/usc-mrel/python-ismrmrd-server#ReconstructaphantomrawdatasetusingtheMRDclientserverpair) and in a separate window, run the client with the ``-c filterkspace`` option to specify the new config:
     ```
     python client.py -c filterkspace -o phantom_img.h5 phantom_raw.h5
     ```
@@ -135,7 +140,7 @@ In this example, a high-pass filter is applied to images.
     from PIL import Image, ImageFilter
     ```
 
-1. In the ``process_image()`` function the ``filterimage.py`` file, find the sections where the incoming images are being [normalized](https://github.com/kspaceKelvin/python-ismrmrd-server/blob/6684b4d17c0591e64b34bc06fdd06d78a2d8c659/invertcontrast.py#L261) and [filtered](https://github.com/kspaceKelvin/python-ismrmrd-server/blob/6684b4d17c0591e64b34bc06fdd06d78a2d8c659/invertcontrast.py#L267). The Pillow image filters require images with values in the range 0-255, so replace these two sections as follows:
+1. In the ``process_image()`` function the ``filterimage.py`` file, find the sections where the incoming images are being [normalized](https://github.com/usc-mrel/python-ismrmrd-server/blob/6684b4d17c0591e64b34bc06fdd06d78a2d8c659/invertcontrast.py#L261) and [filtered](https://github.com/usc-mrel/python-ismrmrd-server/blob/6684b4d17c0591e64b34bc06fdd06d78a2d8c659/invertcontrast.py#L267). The Pillow image filters require images with values in the range 0-255, so replace these two sections as follows:
 
     **Old code:**
     ```
@@ -172,7 +177,7 @@ In this example, a high-pass filter is applied to images.
     np.save(debugFolder + "/" + "imgFiltered.npy", data)
     ```
 
-1. The module used by the server is specified by the ``config`` option on the client side.  The Server class used in this code [attempts to find](https://github.com/kspaceKelvin/python-ismrmrd-server/blob/6684b4d17c0591e64b34bc06fdd06d78a2d8c659/server.py#L105) a Python module matching the name of the config file if it doesn't match one of the default examples.  [Start the server](https://github.com/kspaceKelvin/python-ismrmrd-server#ReconstructaphantomrawdatasetusingtheMRDclientserverpair) and in a separate window, run the client with the ``-c filterimage`` option to specify the new config:
+1. The module used by the server is specified by the ``config`` option on the client side.  The Server class used in this code [attempts to find](https://github.com/usc-mrel/python-ismrmrd-server/blob/6684b4d17c0591e64b34bc06fdd06d78a2d8c659/server.py#L105) a Python module matching the name of the config file if it doesn't match one of the default examples.  [Start the server](https://github.com/usc-mrel/python-ismrmrd-server#ReconstructaphantomrawdatasetusingtheMRDclientserverpair) and in a separate window, run the client with the ``-c filterimage`` option to specify the new config:
     ```
     python client.py -c filterimage -o phantom_img.h5 phantom_raw.h5
     ```
@@ -200,7 +205,7 @@ For Siemens data, raw data in .dat format can be converted and processed as foll
 
     If the input file is a multi-RAID file, then several output files are created such as ``gre_raw_1.h5`` and ``gre_raw_2.h5``.  The first measurements are dependency data while the main acquisition is in the last numbered file.
 
-1. [Start the server](https://github.com/kspaceKelvin/python-ismrmrd-server#ReconstructaphantomrawdatasetusingtheMRDclientserverpair) and in a separate window, run the client using the converted file:
+1. [Start the server](https://github.com/usc-mrel/python-ismrmrd-server#ReconstructaphantomrawdatasetusingtheMRDclientserverpair) and in a separate window, run the client using the converted file:
     ```
     python client.py -c invertcontrast -o gre_img.h5 gre_raw_2.h5
     ```
@@ -218,7 +223,7 @@ For image processing workflows, DICOM images can be used as input by converting 
     ```
     Where the DICOM files are in a folder called ``dicoms`` and an output file ``dicom_img.h5`` is created containing the MRD formatted images.
 
-1. [Start the server](https://github.com/kspaceKelvin/python-ismrmrd-server#ReconstructaphantomrawdatasetusingtheMRDclientserverpair) and in a separate window, run the client using the converted file:
+1. [Start the server](https://github.com/usc-mrel/python-ismrmrd-server#ReconstructaphantomrawdatasetusingtheMRDclientserverpair) and in a separate window, run the client using the converted file:
     ```
     python client.py -c invertcontrast -o dicom_img_inverted.h5 dicom_img.h5
     ```
@@ -243,7 +248,7 @@ Conda is a Python environment manager that is useful for creating and maintainin
 
 1. Clone (download) this repository
     ```
-    git clone https://github.com/kspaceKelvin/python-ismrmrd-server.git
+    git clone https://github.com/usc-mrel/python-ismrmrd-server.git
     ```
 
 1. Change into this respository's directory and create a new conda environment for MRD using the dependencies listed in [environment.yml](environment.yml).  If using Windows, then [environment_windows.yml](environment_windows.yml) should be used instead.
@@ -285,71 +290,81 @@ This may be the result of the entire anaconda.org domain being blocked as a proa
 ###  2.3. <a name='SettingupaDockerenvironment'></a>Setting up a Docker environment
 [Docker](https://www.docker.com/products/docker-desktop) is a virtualization platform that allows software to run in isolated environments called containers.  It provides a convenient mechanism to package up a reconstruction program and all its libraries in a manner that can be easily deployed to other computers without manually installing dependencies or other configuration steps.  
 
-A complete working environment of this respository has been compiled into a Docker image stored on [Docker Hub](https://hub.docker.com/r/kspacekelvin/fire-python).  This can be used to quickly get started, but [setting up a native Python environment](#SetupaDockerEnvironment) is recommended for development work.
+##  3. <a name='SpiralReconstruction'></a>Spiral Reconstruction
 
-1. Download and install [Docker](https://www.docker.com/products/docker-desktop) with the standard settings.
+Spiral reconstruction can reconstruct 2D spiral sequences generated by [RTSpiral PyPulseq](https://github.com/usc-mrel/rtspiral_pypulseq). All three reconstructions have the following prerequisites:
+1. **The metafile:** This is a ".mat" file generated by the Spiral design script that contains necessary information to perform reconstruction that is not available in the raw data. The filename is the sequence signature provided by Pulseq. This includes the trajectory, DCF, designed FoV and resolution, and Golden Angle parameters. Default searchpath is `seq_meta/` directory under the current working directory.
+2. **The config file:** This is a ".toml" file that sets the reconstruction parameters. This file will be read every time a new recon has arrived, meaning we don't have to restart the recon server every time there is a config change. File paths and keys for each reconstruction will be given below.
 
-1. Download the Docker image of this repository by opening a command prompt and running:
-    ```
-    docker pull kspacekelvin/fire-python
-    ```
+Also, all three reconstruction have GIRF correction available, however, GIRF measurements for the target scanner has to be put at as a ".mat" file under the project directory, and the search path for the file needs to be edited in `GIRF.py`.
 
-1. <a name='Dockerserver'></a>The Python MRD server can be started in a Docker container by running:
-    ```
-    In Windows:
-        docker run -p=9002:9002 --rm -it -v C:\tmp:/tmp kspacekelvin/fire-python
 
-    In MacOS/Linux:
-        docker run -p=9002:9002 --rm -it -v /tmp:/tmp kspacekelvin/fire-python
-    ```
+### 3.1 <a name='SpiralVS'></a>Spiral View-Sharing Reconstruction
 
-    The command line options used are:
-    ```
-    -p=9002:9002      Allows access to port 9002 inside the container from port 9002 on the host.  
-                      Change the first number to change the host port.
-    -it               Enables "interactive" mode with a pseudo-tty.  This is necessary for "ctrl-c" to
-                      stop the program.
-    --rm              Remove the container after it is stopped
-    -v C:\tmp:/tmp    Maps the C:\tmp folder on the host to /tmp inside the container.
-                      Change the first path if using a different folder on the host computer.
-                      Log and debug files are stored in this folder.
-    ```
+This reconstruction is for real-time view-sharing reconstruction. It will be run if the config name `simplenufft1arm` sent from the client. On a reconstruction server with a sufficient GPU, it should be able to catch up with the acquisition. It uses [SigPy](https://github.com/mikgroup/sigpy) NUFFT for the reconstruction. 
+Configuration is done via `${WORKDIR}/configs/rtspiral_vs_config.toml`. Available parameters are as follows:
 
-    The server can be stopped by pressing ``ctrl-c``.
+```toml
+"metafile_paths" = ["/PATH/TO/METAFILES"] # This tells the recon where to look for the metafiles (HASH.mat). Default is ${WORKDIR}/seq_meta
 
-1. <a name='Dockerclient'></a>The Python MRD client can also be run in a Docker container (the internal IP address `host.docker.internal` needs to be manually added to the host in the latest version of Docker). If the server is running in a Docker container already, open a new command prompt and run:
-    
-    In Windows:
-    ```
-    docker run --rm -it --add-host=host.docker.internal:host-gateway -v C:\tmp:/tmp kspacekelvin/fire-python /bin/bash
-    ```
+[reconstruction]
+"apply_girf"        = true
+"arms_per_frame"    = 55	# How many arms to grid per frame (temporal footprint)
+"window_shift"      = 17	# How many arms per frame will be shifted.
+"gpu_device"        = 2		# GPU ID to be used.
+"coil_combine"      = "adaptive"	# "adaptive" or "rssq". Adaptive uses Inati's method to calculate coil maps from the first frames. "rssq" uses root sum of squares.
+"save_complex"      = false # Save complex float images, rather than scaled magnitude int images.
+"ignore_arms_per_frame" = false # When true, arms per frame and window shift are ignored and arms to grid will be interleaves parameter in the metadata. Useful for linear ordering.
 
-    In MacOS/Linux:
-    ```
-    docker run --rm -it --add-host=host.docker.internal:host-gateway -v /tmp:/tmp kspacekelvin/fire-python /bin/bash
-    ```
+```
 
-    In this invocation, the ``/bin/bash`` argument is used to start the container with a bash shell prompt instead of starting the Python MRD server.  The client can be called by running:
-    ```
-    python /opt/code/python-ismrmrd-server/client.py -a host.docker.internal -p 9002 -o /tmp/phantom_img.h5 /tmp/phantom_raw.h5
-    ```
+### 3.2 <a name='SpiralTFD'></a>Spiral Temporal Finite Difference (TFD) Reconstruction
 
-    The command line options used are:
-    ```
-    -a host.docker.internal  Send data to address host.docker.internal, which
-                             resolves to the IP address of the Docker host.
-    -p 9002                  Send data to port 9002.  This is sent to the host, which
-                             is then redirected to the server container due to the
-                             "-p" port mapping when starting the server. 
-    -o                       Specifies the output file name
-    -G                       Specifies the group name in the output file
-    ```
+This is an iterative temporal finite difference (TFD) reconstruction. It will be run if the config name `rtspiral_bart_tvrecon` sent from the client. It uses BART's `nlinv` to calculate coil maps and `pics` to perform iterative reconstruction. It can divide data into chunks if it does not fit into a GPU.
+Configuration is done via `${WORKDIR}/configs/rtspiral_bart_tvrecon_config.toml`. Available parameters are as follows:
 
-    This Docker container can also be used to run the ``generate_cartesian_shepp_logan_dataset.py`` script to generate phantom data:
-    ```
-        python /opt/code/python-ismrmrd-server/generate_cartesian_shepp_logan_dataset.py -o /tmp/phantom_raw.h5
-    ```
-##  3. <a name='Codedesign'></a>Code design
+```toml
+[reconstruction]
+"apply_girf"        = true
+"gpu_device"        = 0 	# GPU ID to be used
+
+"arms_per_frame"    = 7		# How many arms to grid per frame (temporal footprint)
+"num_recon_frames"  = 2000	# Number of frames to be reconstructed (extra arms at the end will be discarded).
+"num_chunks"        = 5         # Divide time frames into chunks so that they fit into a single GPU.
+"fov_oversampling"  = 1.5       # Oversampling factor for FOV
+"reg_lambda"        = 0.0002	# Temporal regularizer.
+"num_iter"          = 120	# Number of iterations for the TFD recon.
+
+"BART_TOOLBOX_PATH" = "/PATH/TO/BART/TOOLBOX"
+```
+
+### 3.3 <a name='SpiralXDGRASP'></a> Spiral Dual Temporally Constrained Reconstruction
+
+This is an dual temporally constrained reconstruction, similar to XDGRASP. It will be run if the config name `spiral_xdgrasp_recon` sent from the client. It uses BART's `nlinv` to calculate coil maps and `pics` to perform iterative reconstruction. It needs cardiac and respiratory navigators to run. It only accepts pilot tone (**PT**) for the respiratory navigator. It accepts ECG or PT for the cardiac navigator. It assumes PT has the waveform ID 1025 in the MRD.
+Configuration is done via `${WORKDIR}/configs/spiral_xdgrasp_config.toml`. Available parameters are as follows:
+
+```
+[reconstruction]
+"apply_girf"         = true
+"arm_discard_pre"    = 5 	# [s] First arm_discard second will be excluded from the reconstruction.
+"arm_discard_post"   = 5 	# [s] Last arm_discard second will be excluded from the reconstruction.
+"reg_lambda_resp"    = 0.0005	# Regularizer along respiratory dimension
+"reg_lambda_card"    = 0.0005	# Regularizer along the cardiac dimension
+"num_iter"           = 300	# Number of optimization iterations
+"fov_oversampling"   = 1        # Oversampling factor for FOV
+"gpu_device"         = 3	# GPU ID to be used for the reconstruction
+"BART_TOOLBOX_PATH"  = "/PATH/TO/BART/TOOLBOX"
+
+[binning]
+"n_respiratory_bins" = 12	# Number of respiratory bins
+"n_cardiac_bins"     = 20	# Number of cardiac bins
+"trigger_source"     = "pilottone_derivative" # "ecg", "pilottone", "pilottone_derivative". This is the trigger source for the cardiac only. Respiratory always uses PT. 
+"ecg_pilottone_delay"= 0.15 	# [s] Delay to be compensated for pilottone in order to match cardiac phases with ECG.
+"resp_discard"       = 0.1 	# Ratio of the extreme states to be discarded for the respiratory waveform
+"fill_small_bins"    = true 	# When true, bins will be zero filled to the maximum number of arms. If false, they will be cropped to the minimum.
+```
+
+##  4. <a name='Codedesign'></a>Code design
 This code is designed to provide a reference implementation of an MRD client/server pair.  It is modular and can be easily extended to include additional reconstruction/analysis programs.
 
 - [main.py](main.py):  This is the main program, parsing input arguments and starting a "Server" class instance.
@@ -384,7 +399,7 @@ There are several example "modules" that can be selected by specifying their nam
 ### 3.1 <a name='Jsonconfig'></a>Additional (JSON) config
 It is often useful for a client to provide additional configuration parameters during runtime to a module without changing code in the module itself.  For example this could be used to tune filter parameters, toggle additional outputs, or control optional processing steps.  The [client.py](client.py) is configured to look for a config file in the current folder, matching the name of the module and ending in `.json`, e.g. `invertcontrast.json` if the config module is named `invertcontrast`.  The example [invertcontrast.json](invertcontrast.json) can be modified with the `options` parameter set to `roi` to add an example ROI, `colormap` to add a color lookup table, and `rgb` to return an RGB image.
 
-##  4. <a name='Savingincomingdata'></a>Saving incoming data
+##  5. <a name='Savingincomingdata'></a>Saving incoming data
 It may be desirable for the MRD server to save a copy of incoming data from the client.  For example, if the client is an MRI scanner, then the saved data can be used for offline simulations at a later time.  This may be particularly useful when the MRI scanner client is sending image data, as images are not stored in a scanner's raw data file and would otherwise require offline simulation of the MRI scanner reconstruction as well.
 
 The feature may be turned on by starting the server with the ``-s`` option (disabled by default).  Data files are named by the current date/time and stored in ``/tmp/share/saved_data``.  The saved data folder can be changed using the ``-S`` option.  For example, to turn on saving of incoming data in the ``/tmp`` folder, start the server with:
@@ -398,7 +413,7 @@ Alternatively, this feature can be enabled on a per-session basis when the clien
 
 The resulting saved data files are in MRD .h5 format and can be used as input for ``client.py`` as detailed above.
 
-##  5. <a name='Startupscripts'></a>Startup scripts
+##  6. <a name='Startupscripts'></a>Startup scripts
 There are three scripts that may be useful when starting the Python server in a chroot environment (i.e. on the scanner).  When using this server with FIRE, the startup script is specified in the fire.ini file as ``chroot_command``.  The scripts are:
 
 - [start-fire-python-server.sh](start-fire-python-server.sh):  This script takes one optional argument, which is the location of a log file.  If not provided, logging outputs are discarded.
@@ -407,7 +422,7 @@ There are three scripts that may be useful when starting the Python server in a 
 
 - [start-fire-python-server-with-data-storage.sh](start-fire-python-server-with-data-storage.sh):  This script is the same as [start-fire-python-server.sh](start-fire-python-server.sh), but saves incoming data (raw k-space readouts or images) to files in ``/tmp/share/saved_data``, which is on the host computer at ``%CustomerIceProgs%\fire\share\saved_data``.  This is useful to save a copy of MRD formatted data (particularly for image-based workflows) for offline development, but this option should be used carefully, as raw data can be quite large and can overwhelm the limited hard drive space on the Windows host.
 
-##  6. <a name='CustomDockers'></a>Building a custom Docker image
+##  7. <a name='CustomDockers'></a>Building a custom Docker image
 Integration of a custom module into a MRD server using this repository can often be achieved by creating only the module itself and using the server framework of python-ismrmrd-server without modification.  This can greatly simplify development and maintenance.
 
 To implement a new module, create a copy of an example one (e.g. [invertcontrast.py](invertcontrast.py)) as a starting point with a new name.  Add the required functionality to this module and optionally create a JSON config for real-time configuration (see [invertcontrast.json](invertcontrast.json) for example).

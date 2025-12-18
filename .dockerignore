@@ -1,0 +1,6 @@
+docker/*.img
+docker/.tmp*
+*.h5
+*venv*
+saved_data/
+waveforms/

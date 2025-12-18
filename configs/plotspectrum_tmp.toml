@@ -1,0 +1,3 @@
+save_raw = false
+skip_TR = 10
+channel = -1 # -1 for rssq, channel index for specific channel 

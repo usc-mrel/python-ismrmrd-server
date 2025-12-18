@@ -10,8 +10,8 @@
 			"docker.io/kspacekelvin/fire-python:buildcache"]
 	},
 
-	// Use to enable local GPUs in container if available
-	// "runArgs": [ "--gpus=all" ],
+	// To enable your local GPUs in container if they are on enabled by default
+	"runArgs": [ "--gpus=all" ],
 
 	// Use appPort to "publish" a port to the host machine. Compared to forwardPorts,
 	// appPort allows connections from non-localhost
