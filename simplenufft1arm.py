@@ -103,6 +103,7 @@ def process(conn: connection.Connection, config, metadata):
     frames = []
     arm_counter = 0
     rep_counter = 0
+    slc_counter = 0
     device = sp.Device(gpu_device)
 
     coord_gpu = sp.to_device(ktraj, device=device)
@@ -204,9 +205,15 @@ def process(conn: connection.Connection, config, metadata):
                 if arm_counter == n_unique_angles:
                     arm_counter = 0
 
+                if arm.idx.slice != slc_counter:
+                    rep_counter = 0
+                    slc_counter = arm.idx.slice
+                    logging.info(f"Processing slice {slc_counter} ...")
+
                 if ((arm.scan_counter) % window_shift) == 0 and ((arm.scan_counter) >= n_arm_per_frame):
                     start = time.perf_counter()
                     if coil_combine == "adaptive" and rep_counter == 0:
+                        logging.info("Calculating coil sensitivity maps...")
                         sens = sp.to_device(reconutils.process_csm(frames), device=device)
 
                     if save_complex:
