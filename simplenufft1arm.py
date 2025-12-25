@@ -103,6 +103,7 @@ def process(conn: connection.Connection, config, metadata):
     frames = []
     arm_counter = 0
     rep_counter = 0
+    img_counter = 1
     slc_counter = 0
     device = sp.Device(gpu_device)
 
@@ -217,9 +218,9 @@ def process(conn: connection.Connection, config, metadata):
                         sens = sp.to_device(reconutils.process_csm(frames), device=device)
 
                     if save_complex:
-                        image = reconutils.process_frame_complex(arm, frames, sens, device, rep_counter, cfg, metadata)
+                        image = reconutils.process_frame_complex(arm, frames, sens, device, rep_counter, img_counter, cfg, metadata)
                     else:
-                        image = reconutils.process_group(arm, frames, sens, device, rep_counter, cfg, metadata)
+                        image = reconutils.process_group(arm, frames, sens, device, rep_counter, img_counter, cfg, metadata)
                     end = time.perf_counter()
 
                     logging.debug("Elapsed time for frame processing: %f secs.", end-start)
@@ -228,6 +229,7 @@ def process(conn: connection.Connection, config, metadata):
                     conn.send_image(image)
 
                     rep_counter += 1
+                    img_counter += 1
 
                 end_iter = time.perf_counter()
                 logging.debug("Elapsed time for per iteration: %f secs.", end_iter-start_iter)
