@@ -104,7 +104,7 @@ def process_csm(frames):
     return csm_est
 
 
-def process_group(group, frames: list, sens: npt.NDArray | None, device, rep, config, metadata):
+def process_group(group, frames: list, sens: npt.NDArray | None, device, rep, image_idx, config, metadata):
     xp = device.xp
     with device:
         data = xp.zeros(frames[0].shape, dtype=np.complex128)
@@ -144,7 +144,7 @@ def process_group(group, frames: list, sens: npt.NDArray | None, device, rep, co
     # with this option, can take input as: [cha z y x], [z y x], or [y x]
     image = ismrmrd.Image.from_array(data.transpose(), acquisition=group, transpose=False)
 
-    image.image_index = rep
+    image.image_index = image_idx
     image.repetition = rep
 
     # Set field of view
@@ -177,7 +177,7 @@ def process_group(group, frames: list, sens: npt.NDArray | None, device, rep, co
     return image
 
 
-def process_frame_complex(group, frames: list, sens: npt.NDArray | None, device, rep, config, metadata):
+def process_frame_complex(group, frames: list, sens: npt.NDArray | None, device, rep, image_idx, config, metadata):
     xp = device.xp
     with device:
         data = xp.zeros(frames[0].shape, dtype=np.complex128)
@@ -203,7 +203,7 @@ def process_frame_complex(group, frames: list, sens: npt.NDArray | None, device,
     # with this option, can take input as: [cha z y x], [z y x], or [y x]
     image = ismrmrd.Image.from_array(data.transpose(), acquisition=group, transpose=False)
 
-    image.image_index = rep
+    image.image_index = image_idx
     image.repetition = rep
 
     # Set field of view
