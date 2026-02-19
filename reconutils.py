@@ -162,6 +162,30 @@ def process_group(group, frames: list, sens: npt.NDArray | None, device, rep, im
                          'ImageScaleFactor':       str(dscale)
                          })
 
+    
+    # Set slice position
+    # Center of the excited volume, in (left, posterior, superior) (LPS) coordinates relative to isocenter in millimeters. 
+    # NB this is different than DICOM’s ImageOrientationPatient, which defines the center of the first (typically top-left) voxel.
+    # TODO: This assumes slice direction is along "AP" axis. Can be generalized.
+    Nslc = metadata.encoding[0].encodingLimits.slice.maximum+1
+    slice_shift = [0, 0, metadata.encoding[0].reconSpace.fieldOfView_mm.z * (image.slice-Nslc//2)]
+    #del_img_pos = r_GCS2PCS @ slice_shift
+
+    #
+    r_GCS2RCS = np.array(  [[0,    1,   0],  # [PE]   [0 1 0] * [r]
+                                        [1,    0,   0],  # [RO] = [1 0 0] * [c]
+                                        [0,    0,   1]]) # [SL]   [0 0 1] * [s]
+    r_GCS2PCS = np.array([group.phase_dir, -np.array(group.read_dir), group.slice_dir])
+    r_PCS2DCS = GIRF.calculate_matrix_pcs_to_dcs(metadata.measurementInformation.patientPosition.value)
+    r_GCS2DCS = r_PCS2DCS.dot(r_GCS2PCS)
+    sR = r_GCS2DCS.dot(r_GCS2RCS)
+    del_img_pos = r_GCS2PCS.T @ slice_shift
+
+    # for ii in range(3):
+        # image.position[ii] = ctypes.c_float(image.position[ii] + del_img_pos[ii])
+    if rep == 0:
+        print(f"Slice position: {image.position[:]}, delta: {del_img_pos}")
+
     # Add image orientation directions to MetaAttributes if not already present
     if meta.get('ImageRowDir') is None:
         meta['ImageRowDir'] = ["{:.18f}".format(image.getHead().read_dir[0]), "{:.18f}".format(image.getHead().read_dir[1]), "{:.18f}".format(image.getHead().read_dir[2])]
@@ -252,7 +276,7 @@ def process_waveforms(wf_list: list[ismrmrd.Waveform], acq_init_timestamp: float
             ecg.append(arm.data)
             if t_init_ecg == 0:
                 t_init_ecg = arm.time_stamp*2.5e-3
-                ecg_sampling_time = arm.sample_time_us*1e-6
+                ecg_sample_time = arm.sample_time_us*1e-6
         elif arm.waveform_id == PULSEOX_WAVEFORM_ID:
             pulseox.append(arm.data)
             if t_init_pox == 0:
@@ -314,6 +338,99 @@ def process_waveforms(wf_list: list[ismrmrd.Waveform], acq_init_timestamp: float
     card = ecg if (len(ecg) > 0 and not np.isnan(ecg).all()) else (pulseox if len(pulseox) > 0 else ext1)
     t_card = t_ecg if (len(ecg) > 0 and not np.isnan(ecg).all()) else (t_pox if len(pulseox) > 0 else t_ext1)
     return t_resp, resp, t_card, card
+
+def waveforms_asarray2(wf_list: list[ismrmrd.Waveform]) -> dict:
+    '''An alternative function to sort and convert a list of waveforms to numpy arrays.
+        Parameters
+        ----------
+        wf_list : list[ismrmrd.Waveform]
+            List of waveforms.
+        
+        Returns
+        -------
+        waveform_dict : dict
+            Dictionary of waveforms. Possible keys are 'ecg', 'pulseox', 'resp', 'ext1'. 
+            Keys will only be present if the corresponding waveform is found.
+    '''
+    ecg = []
+    resp_pt = []
+    ext1 = []
+    t_ext1 = []
+    pulseox = []
+    t_init_pox = 0
+    pulseox_sample_time = 0
+    t_init_ecg = 0
+    ecg_sample_time = 0
+    t_init_resp = 0
+    resp_sample_time = 0
+    t_init_ext1 = 0
+    ext1_sample_time = 0
+
+    for wf in wf_list:
+        if wf.waveform_id == ECG_WAVEFORM_ID:
+            ecg.append(wf.data)
+            if t_init_ecg == 0:
+                t_init_ecg = wf.time_stamp*2.5e-3
+                ecg_sample_time = wf.sample_time_us*1e-6
+        elif wf.waveform_id == PULSEOX_WAVEFORM_ID:
+            pulseox.append(wf.data)
+            if t_init_pox == 0:
+                t_init_pox = wf.time_stamp*2.5e-3
+                pulseox_sample_time = wf.sample_time_us*1e-6
+        elif wf.waveform_id == RESPPT_WAVEFORM_ID:
+            resp_pt.append(wf.data)
+            if t_init_resp == 0:
+                t_init_resp = wf.time_stamp*2.5e-3
+                resp_sample_time = wf.sample_time_us*1e-6
+        elif wf.waveform_id == EXT1_WAVEFORM_ID:
+            ext1.append(wf.data)
+            if t_init_ext1 == 0:
+                t_init_ext1 = wf.time_stamp*2.5e-3
+                ext1_sample_time = wf.sample_time_us*1e-6
+            t_ext1.extend(wf.time_stamp*2.5e-3 + np.arange(wf.data.shape[1])*ext1_sample_time)
+
+
+    waveform_dict = {}
+    ecg = np.concatenate(ecg, axis=1).T if len(ecg) > 0 else np.array([])
+    if len(ecg) > 0:
+        if np.isnan(ecg).all():
+            t_ecg = np.array([])
+        else:
+            ecg = ecg[:, :].astype(np.float32)
+            ecg -= np.percentile(ecg, 5, axis=0)
+            ecg /= np.max(np.abs(ecg), axis=0, keepdims=True)
+            t_ecg = np.arange(ecg.shape[0])*ecg_sample_time + t_init_ecg
+            waveform_dict['ecg'] = (t_ecg, ecg)
+
+    pulseox = np.concatenate(pulseox, axis=1).T if len(pulseox) > 0 else np.array([])
+    if len(pulseox) > 0:
+        is_flat = np.all(pulseox[:, 0] == pulseox[0, 0], axis=0) # Check if the waveform is flat
+        if not np.isnan(pulseox).all() and not is_flat and not np.all(pulseox[:,1]):
+            pulseox_trigs = pulseox[:, 1].astype(np.int32)
+            pulseox_trigs[pulseox_trigs > 0] = 1
+            pulseox = pulseox[:, 0].astype(np.float32)
+            pulseox -= np.percentile(pulseox, 5, axis=0)
+            pulseox /= np.max(np.abs(pulseox), axis=0, keepdims=True)
+            t_pox = np.arange(pulseox.shape[0])*pulseox_sample_time + t_init_pox
+            waveform_dict['pulseox'] = (t_pox, pulseox, pulseox_trigs)
+
+    resp_pt = np.concatenate(resp_pt, axis=1).T if len(resp_pt) > 0 else np.array([])
+    if len(resp_pt) > 0:
+        resp_pt = resp_pt[:, 0].astype(np.float32)
+        resp_pt -= np.mean(resp_pt, axis=0, keepdims=True)
+        resp_pt /= np.max(np.abs(resp_pt), axis=0, keepdims=True)
+        t_resp = np.arange(resp_pt.shape[0])*resp_sample_time + t_init_resp
+        waveform_dict['resp'] = (t_resp, resp_pt)
+
+    ext1 = np.concatenate(ext1, axis=1).T if len(ext1) > 0 else np.array([])
+    if len(ext1) > 0:
+        ext1 = ext1[:, 1].astype(np.float32)
+        ext1[ext1 > 0] = 1
+        # t_ext1 = np.arange(ext1.shape[0])*ext1_sample_time + t_init_ext1
+        t_ext1 = np.array(t_ext1)
+        waveform_dict['ext1'] = (t_ext1, ext1)
+
+    return waveform_dict
 
 def load_trajectory(metadata, metafile_paths: list[str]) -> dict | None:
     # get the k-space trajectory based on the metadata hash.

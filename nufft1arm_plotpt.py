@@ -19,11 +19,14 @@ matplotlib.use('Agg')  # Use non-interactive backend for saving figures
 
 import sigpy as sp
 from scipy.io import savemat
-from scipy.signal import savgol_filter
+from scipy.signal import savgol_filter, filtfilt, firwin
+from sobi import sobi
 from sigpy import fourier
 
 import reconutils
 from pilottone import calc_fovshift_phase, pt
+from pilottone.triggering import report_jitter
+from pilottone.pt import pick_navigators_from_sources, check_waveform_polarity
 
 # Folder for debug output files
 debugFolder = "/tmp/share/debug"
@@ -123,6 +126,7 @@ def process(conn: connection.Connection, config, metadata):
     time_stamp_acq = 0
     arm_counter = 0
     rep_counter = 0
+    img_counter = 1
     acq_counter = 0
     device = sp.Device(gpu_device)
 
@@ -241,9 +245,9 @@ def process(conn: connection.Connection, config, metadata):
                         sens = sp.to_device(reconutils.process_csm(frames), device=device)
 
                     if save_complex:
-                        image = reconutils.process_frame_complex(arm, frames, sens, device, rep_counter, cfg, metadata)
+                        image = reconutils.process_frame_complex(arm, frames, sens, device, rep_counter, img_counter, cfg, metadata)
                     else:
-                        image = reconutils.process_group(arm, frames, sens, device, rep_counter, cfg, metadata)
+                        image = reconutils.process_group(arm, frames, sens, device, rep_counter, img_counter, cfg, metadata)
                     end = time.perf_counter()
 
                     logging.debug("Elapsed time for frame processing: %f secs.", end-start)
@@ -252,6 +256,7 @@ def process(conn: connection.Connection, config, metadata):
                     conn.send_image(image)
 
                     rep_counter += 1
+                    img_counter += 1
 
                     end_iter = time.perf_counter()
                     logging.debug("Elapsed time for per iteration: %f secs.", end_iter-start_iter)
@@ -278,8 +283,114 @@ def process(conn: connection.Connection, config, metadata):
     logging.info('Reconstruction is finished.')
 
     # Prepare waveforms
-    t_resp, resp, t_card, card = reconutils.process_waveforms(wf_list, time_stamp_acq)
-    process_pilot_tone_signal(metadata, cfg, save_folder, coil_name, pt_sig, t_card, card, t_resp, resp)
+    wf_dict = reconutils.waveforms_asarray2(wf_list)
+
+    t_card = np.array([])
+    card = np.array([])
+    t_resp = np.array([])
+    resp = np.array([])
+    # Go through the priority list
+    if 'ecg' in wf_dict:
+        t_card = wf_dict['ecg'][0] - time_stamp_acq
+        card = wf_dict['ecg'][1][:, -1]
+    elif 'pulseox' in wf_dict:
+        t_card = wf_dict['pulseox'][0] - time_stamp_acq
+        card = wf_dict['pulseox'][1][:, -1]
+    elif 'ext1' in wf_dict:
+        t_card = wf_dict['ext1'][0] - time_stamp_acq
+        card = wf_dict['ext1'][1]
+
+    if 'resp' in wf_dict:
+        t_resp = wf_dict['resp'][0] - time_stamp_acq
+        resp = wf_dict['resp'][1]
+
+    process_pilot_tone_signal2(metadata, cfg, save_folder, coil_name, pt_sig, t_card, card, t_resp, resp)
+
+
+def process_pilot_tone_signal2(metadata, cfg, save_folder, coil_name, pt_sig, t_ecg=list(), ecg=list(), t_resp=list(), resp_pt=list()):
+    if len(pt_sig) > 0:
+        logging.info("Processing pilot tone signal...")
+        dt_pt = metadata.sequenceParameters.TR[0]*1e-3  # Convert TR from ms to seconds
+        pt_sig = np.abs(np.array(pt_sig)).squeeze()
+        pt_raw = np.squeeze(pt_sig - np.mean(pt_sig, axis=0, keepdims=True))
+        n_pt_samp = pt_sig.shape[0]
+        f_samp = 1/dt_pt # [Hz]
+
+        h_denoise = firwin(2*(n_pt_samp//8)-1, [0.2, 4], fs=f_samp, window=('tukey', 1), pass_zero=False)
+        pt_filt = filtfilt(h_denoise, 1, pt_raw, axis=0)
+
+        time_pt = np.arange(0, pt_sig.shape[0]) * dt_pt
+        save_path = os.path.join(save_folder, f"MID{int(metadata.measurementInformation.measurementID.split('_')[-1]):05d}_{metadata.measurementInformation.protocolName}_{datetime.now().strftime('%H%M%S')}")
+        logging.info(f"Saving pilot tone signal to {save_path}...")
+        os.makedirs(save_path, exist_ok=True)
+
+        if cfg['pilottone']['save_raw']:
+            logging.info("Saving raw pilot tone signal...")
+            fig, axs = plot_rawpt(pt_filt, coil_name, time_pt, sort=True)
+
+            if cfg['pilottone']['save_svg']:
+                fig.savefig(os.path.join(save_path, "pt_raw.svg"))
+            if cfg['pilottone']['save_png']:
+                fig.savefig(os.path.join(save_path, "pt_raw.png"), dpi=300)
+            if cfg['pilottone']['save_mat']:
+                savemat(os.path.join(save_path, "pt_raw.mat"), {'pt_signal': pt_filt, 'dt': dt_pt})
+            plt.close()
+        
+        if cfg['pilottone']['save_navs']:
+            logging.info("Processing pilot tone signal for respiratory/cardiac signals...")
+
+            h_cardiac = firwin(2*(n_pt_samp//8)-1, [0.8, 4], fs=f_samp, window=('tukey', 1), pass_zero=False)
+            h_respiratory = firwin(2*(n_pt_samp//8)-1, [0.2, 0.6], fs=f_samp, window=('tukey', 1), pass_zero=False)
+
+            s_sobi, _, _ = sobi(pt_raw.T, num_lags=600)
+            r_idx, c_idx, confs = pick_navigators_from_sources(s_sobi, time_pt, classifier_path=None, force_navpred=False)
+
+            if len(c_idx) == 0:
+                logging.warning("No cardiac navigator is found at the first attempt. Trying again with denoised waveforms...")
+                s_sobi, _, _ = sobi(pt_filt.T, num_lags=600)
+                r_idx, c_idx, confs = pick_navigators_from_sources(s_sobi, time_pt, classifier_path=None, force_navpred=True)
+            elif len(r_idx) == 0:
+                logging.warning("Cardiac navigator is found, but no respiratory navigator is found at the first attempt. Returning the most likely respiratory navigator according to the classifier confidence...")
+                r_idx = np.argmax(confs[:,1])
+
+            pt_cardiac = filtfilt(h_cardiac, 1, s_sobi[c_idx[0], :], axis=0)
+            pt_cardiac = check_waveform_polarity(pt_cardiac, method='width')*pt_cardiac
+            pt_respiratory = filtfilt(h_respiratory, 1, s_sobi[r_idx[0], :], axis=0)
+
+
+            fig, axs = plt.subplots(2, 1, figsize=(10, 8))
+            axs[0].plot(time_pt, pt_respiratory/np.max(pt_respiratory), label='Respiratory Pilot Tone')
+            if len(resp_pt) > 0:
+                # time_resp = np.arange(0, resp_pt.shape[0])*2.5e-3
+                axs[0].plot(t_resp, resp_pt/np.max(resp_pt), label='Respiratory Beat Sensor', linestyle='--')
+            axs[0].legend()
+            axs[0].set_title('Respiratory Signal')
+            axs[1].plot(time_pt, pt_cardiac/np.max(pt_cardiac), label='Cardiac Pilot Tone')
+            if len(ecg) > 0:
+                # time_ecg = np.arange(0, ecg.shape[0])*2.5e-3
+                axs[1].plot(t_ecg[ecg != 0], ecg[ecg != 0], label='ECG Signal', linestyle='', marker='d')
+            axs[1].legend()
+            axs[1].set_title('Cardiac Signal')
+            axs[1].set_xlabel('Time [s]')
+            plt.tight_layout()
+
+            if cfg['pilottone']['save_svg']:
+                fig.savefig(os.path.join(save_path, "pt_navs.svg"))
+            if cfg['pilottone']['save_png']:
+                fig.savefig(os.path.join(save_path, "pt_navs.png"), dpi=300)
+            if cfg['pilottone']['save_mat']:
+                savemat(os.path.join(save_path, "pt_navs.mat"), {'respiratory': pt_respiratory, 'cardiac': pt_cardiac, 'dt': dt_pt})
+            plt.close()
+            if len(ecg):
+                report_str = report_jitter(time_pt, pt_cardiac, t_ecg, ecg, ecg_trigs=ecg)
+                logging.info("\n"+report_str)
+                with open(os.path.join(save_path, "jitter_report.txt"), 'w') as f:
+                    f.write(report_str)
+                    
+        logging.info("Pilot tone processing is complete.")
+    else:
+        logging.warning("No pilot tone signal found. Skipping pilot tone processing.")
+
 
 def process_pilot_tone_signal(metadata, cfg, save_folder, coil_name, pt_sig, t_ecg=list(), ecg=list(), t_resp=list(), resp_pt=list()):
     if len(pt_sig) > 0:
@@ -287,7 +398,7 @@ def process_pilot_tone_signal(metadata, cfg, save_folder, coil_name, pt_sig, t_e
         dt_pt = metadata.sequenceParameters.TR[0]*1e-3  # Convert TR from ms to seconds
         pt_sig = np.abs(np.array(pt_sig)).squeeze()
         pt_sig = np.squeeze(pt_sig - np.mean(pt_sig, axis=0, keepdims=True))
-        pt_sig_filt = savgol_filter(pt_sig, 81, 3, axis=0)
+        pt_sig_filt = savgol_filter(pt_sig, cfg['pilottone']['golay_filter_len'], 3, axis=0)
         time_pt = np.arange(0, pt_sig.shape[0]) * dt_pt
         save_path = os.path.join(save_folder, f"MID{int(metadata.measurementInformation.measurementID.split('_')[-1]):05d}_{metadata.measurementInformation.protocolName}_{datetime.now().strftime('%H%M%S')}")
         logging.info(f"Saving pilot tone signal to {save_path}...")

@@ -2,7 +2,10 @@ import ismrmrd
 from numpy.fft import ifft, fft
 from scipy.signal.windows import tukey
 from scipy.linalg import lstsq
-from scipy.signal import find_peaks, peak_widths
+from scipy.signal import find_peaks, peak_widths, firwin, convolve
+from scipy.interpolate import pchip_interpolate
+import joblib
+import warnings
 from scipy.sparse.linalg import svds
 from .signal import apply_filter_freq, designbp_tukeyfilt_freq, designlp_tukeyfilt_freq, qint
 from sobi import sobi
@@ -12,6 +15,8 @@ import pyfftw
 import math
 import matplotlib.pyplot as plt
 import re
+import pathlib
+from typing import Literal
 
 def calc_fovshift_phase(kx: npt.NDArray, ky: npt.NDArray, acq: ismrmrd.Acquisition) -> npt.NDArray[np.complex64]:
     '''Calculate the phase demodulation due to the FOV shift in the GCS.
@@ -202,7 +207,7 @@ def pickcoilsbycorr(insig, start_ch, corr_th):
 
     return accept_list, sign_list, corrs
 
-def check_waveform_polarity(waveform: npt.NDArray[np.float64], prominence: float=0.5) -> int:
+def check_waveform_polarity(waveform: npt.NDArray[np.float64], prominence: float=0.5, method:Literal['std', 'width']='std') -> int:
     '''Check the polarity of the waveform and return the sign.
     The logic is, peaks looking up should be narrower than the bottom side for better triggering.
     
@@ -210,6 +215,7 @@ def check_waveform_polarity(waveform: npt.NDArray[np.float64], prominence: float
     ----------
     waveform (np.array): Waveform to check.
     prominence (float): Prominence threshold for peak detection.
+    method (str): Method to use for checking the polarity. 'std' for standard deviation of peak distances, 'width' for peak widths.
 
     Returns:
     ----------
@@ -221,17 +227,20 @@ def check_waveform_polarity(waveform: npt.NDArray[np.float64], prominence: float
     p1, d1 = find_peaks(waveform_, prominence=prominence)
     w1,_,_,_ = peak_widths(waveform_, p1)
 
-    waveform_ = -waveform_
+    waveform_ = -1*waveform.copy()
     waveform_ -= np.percentile(waveform_, 5)
     waveform_ = waveform_/np.percentile(waveform_, 99)
 
-    p2, d2 = find_peaks(-waveform, prominence=prominence)
-    w2,_,_,_ = peak_widths(-waveform, p2)
+    p2, d2 = find_peaks(waveform_, prominence=prominence)
+    w2,_,_,_ = peak_widths(waveform_, p2)
 
     wf_sign = 1
-    if np.sum(w1) > np.sum(w2):
-        print('Cardiac waveform looks flipped. Flipping it..')
-        wf_sign = -1
+    if method == 'std':
+        if np.std(np.diff(p1)) > np.std(np.diff(p2)):
+            wf_sign = -1
+    elif method == 'width':
+        if np.sum(w1) > np.sum(w2):
+            wf_sign = -1
 
     return wf_sign
 
@@ -655,3 +664,93 @@ def extract_triggers(time_pt, cardiac_waveform, skip_time=0.6, prominence=0.4, m
     pt_cardiac_trigs[pt_peaks_selected] = 1
 
     return pt_cardiac_trigs
+
+def pred_scan(rocket_pipeline, scan, force_navpred=False):
+    ''' Predict navigators in the input scan using a pre-trained ROCKET classifier, given a set of sources.
+    A label of 0 indicates non-navigator, 1 indicates respiratory navigator, and 2 indicates cardiac navigator.
+    Parameters
+    ----------
+    rocket_pipeline : sklearn.pipeline.Pipeline
+        Pre-trained ROCKET classifier pipeline.
+    scan : np.ndarray
+        Input scan sources, shape (n_sources, n_samples)
+    force_navpred : bool
+        If True, forces the function to return a respiratory and cardiac navigator even if the classifier does not predict any.
+    Returns
+    -------
+    y_pred_ : np.ndarray
+        Predicted labels for each source, shape (n_sources,).
+    confs_ : np.ndarray
+        Confidence scores for each source, shape (n_sources, n_classes).
+    '''
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore") # Workaround, ignore sklearn tag warnings.
+        confs_ = rocket_pipeline.decision_function(scan[:,None,:])
+
+    y_pred_ = np.argmax(confs_, axis=1)
+
+    # Resolve multiple positive predictions
+    if np.sum(y_pred_ == 1) > 1:
+        resp_preds = (y_pred_ == 1).nonzero()[0]
+        conf_r_ = confs_[resp_preds, 1]
+        top_resp_idx = resp_preds[np.argmax(conf_r_)]
+        other_idxs = np.setdiff1d(resp_preds, np.array([top_resp_idx]))
+        y_pred_[other_idxs] = 0
+        warnings.warn(f"Multiple respiratory predictions found at indices {resp_preds}, keeping index {top_resp_idx} only.")
+    if np.sum(y_pred_ == 2) > 1:
+        card_preds = (y_pred_ == 2).nonzero()[0]
+        conf_r_ = confs_[card_preds, 2]
+        top_card_idx = card_preds[np.argmax(conf_r_)]
+        other_idxs = np.setdiff1d(card_preds, np.array([top_card_idx]))
+        y_pred_[other_idxs] = 0
+        warnings.warn(f"Multiple cardiac predictions found at indices {card_preds}, keeping index {top_card_idx} only.")
+    if force_navpred:
+        if np.sum(y_pred_ == 1) == 0:
+            y_pred_[np.argmax(confs_[:,1])] = 1
+            warnings.warn("No respiratory prediction was found, but force_navpred is True. Forcing the highest confidence prediction as respiratory.")
+        if np.sum(y_pred_ == 2) == 0:
+            y_pred_[np.argmax(confs_[:,2])] = 2
+            warnings.warn("No cardiac prediction was found, but force_navpred is True. Forcing the highest confidence prediction as cardiac.")
+    return y_pred_, confs_
+
+def pick_navigators_from_sources(sources, time_vec, classifier_path=None, force_navpred=False):
+    ''' Pick respiratory and cardiac navigators from input sources using a pre-trained ROCKET classifier.
+    Parameters
+    ----------
+    sources : np.ndarray
+        Input sources, shape (n_sources, n_samples)
+    time_vec : np.ndarray
+        Time vector corresponding to the sources, unit is seconds, shape (n_samples,)
+    classifier_path : str
+        Path to the pre-trained ROCKET classifier. Must be compatible with joblib.load().
+    force_navpred : bool
+        If True, forces the function to return a respiratory and cardiac navigator even if the classifier does not predict any.
+    Returns
+    -------
+    resp_idx : int
+        Index of the respiratory navigator source in the input sources.
+    card_idx : int
+        Index of the cardiac navigator source in the input sources.
+    confs : np.ndarray
+        Confidence scores for each source, shape (n_sources, n_classes).
+    '''
+    if classifier_path is None:
+        classifier_path = str(pathlib.Path(__file__).parent / 'rocket_pipeline.pkl')
+    rocket_pipeline = joblib.load(classifier_path)
+    n_samp = sources.shape[1]
+    dt_samp = time_vec[1] - time_vec[0]
+
+    h_denoise = firwin(2*(n_samp//8)-1, [0.1, 6], fs=1/dt_samp, window=('tukey', 1), pass_zero=False)
+    sources_filt = convolve(sources, h_denoise[None, :], mode='same')
+
+    dt_new = 10e-3  # 10 ms
+    n_samp_new = int(np.ceil(n_samp * dt_samp / dt_new))
+    time_new = np.arange(0, n_samp_new)*dt_new
+    sources_resampled = pchip_interpolate(time_vec, sources_filt, time_new, axis=1)
+    sources_resampled -= np.mean(sources_resampled, axis=1, keepdims=True)
+    sources_resampled /= np.std(sources_resampled, axis=1, keepdims=True)
+
+    y_pred, confs = pred_scan(rocket_pipeline, sources_resampled, force_navpred=force_navpred)
+    resp_idx = np.where(y_pred == 1)[0]
+    card_idx = np.where(y_pred == 2)[0]
+    return resp_idx, card_idx, confs

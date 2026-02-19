@@ -1,0 +1,2 @@
+joblib # for the ROCKET classifier
+sktime # for the ROCKET classifier

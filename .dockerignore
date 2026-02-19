@@ -4,3 +4,6 @@ docker/.tmp*
 *venv*
 saved_data/
 waveforms/
+dev_notebooks/
+seq_meta/*.mat
+testdata/
