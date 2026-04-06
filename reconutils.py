@@ -393,9 +393,12 @@ def waveforms_asarray2(wf_list: list[ismrmrd.Waveform]) -> dict:
     waveform_dict = {}
     ecg = np.concatenate(ecg, axis=1).T if len(ecg) > 0 else np.array([])
     if len(ecg) > 0:
-        if np.isnan(ecg).all():
-            t_ecg = np.array([])
-        else:
+        is_flat = np.all(ecg[:, 0] == ecg[0, 0], axis=0) or \
+            np.all(ecg[:, 1] == ecg[0, 1], axis=0) or \
+            np.all(ecg[:, 2] == ecg[0, 2], axis=0) or \
+            np.all(ecg[:, 3] == ecg[0, 3], axis=0)                  # Check if the waveform is flat
+
+        if not np.isnan(ecg).all() and not is_flat:
             ecg = ecg[:, :].astype(np.float32)
             ecg -= np.percentile(ecg, 5, axis=0)
             ecg /= np.max(np.abs(ecg), axis=0, keepdims=True)
@@ -424,11 +427,13 @@ def waveforms_asarray2(wf_list: list[ismrmrd.Waveform]) -> dict:
 
     ext1 = np.concatenate(ext1, axis=1).T if len(ext1) > 0 else np.array([])
     if len(ext1) > 0:
-        ext1 = ext1[:, 1].astype(np.float32)
-        ext1[ext1 > 0] = 1
-        # t_ext1 = np.arange(ext1.shape[0])*ext1_sample_time + t_init_ext1
-        t_ext1 = np.array(t_ext1)
-        waveform_dict['ext1'] = (t_ext1, ext1)
+        is_flat = np.all(ext1[:, 0] == ext1[0, 0], axis=0) or np.all(ext1[:, 1] == ext1[0, 1], axis=0)
+        if not np.isnan(ext1).all() and not is_flat:
+            ext1 = ext1[:, 1].astype(np.float32)
+            ext1[ext1 > 0] = 1
+            # t_ext1 = np.arange(ext1.shape[0])*ext1_sample_time + t_init_ext1
+            t_ext1 = np.array(t_ext1)
+            waveform_dict['ext1'] = (t_ext1, ext1)
 
     return waveform_dict
 

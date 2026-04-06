@@ -295,7 +295,7 @@ def process(conn: connection.Connection, config, metadata):
         card = wf_dict['ecg'][1][:, -1]
     elif 'pulseox' in wf_dict:
         t_card = wf_dict['pulseox'][0] - time_stamp_acq
-        card = wf_dict['pulseox'][1][:, -1]
+        card = wf_dict['pulseox'][-1]
     elif 'ext1' in wf_dict:
         t_card = wf_dict['ext1'][0] - time_stamp_acq
         card = wf_dict['ext1'][1]
@@ -320,7 +320,8 @@ def process_pilot_tone_signal2(metadata, cfg, save_folder, coil_name, pt_sig, t_
         pt_filt = filtfilt(h_denoise, 1, pt_raw, axis=0)
 
         time_pt = np.arange(0, pt_sig.shape[0]) * dt_pt
-        save_path = os.path.join(save_folder, f"MID{int(metadata.measurementInformation.measurementID.split('_')[-1]):05d}_{metadata.measurementInformation.protocolName}_{datetime.now().strftime('%H%M%S')}")
+        recon_date = datetime.today().strftime('%Y-%m-%d')
+        save_path = os.path.join(save_folder, recon_date, f"MID{int(metadata.measurementInformation.measurementID.split('_')[-1]):05d}_{metadata.measurementInformation.protocolName}_{datetime.now().strftime('%H%M%S')}")
         logging.info(f"Saving pilot tone signal to {save_path}...")
         os.makedirs(save_path, exist_ok=True)
 
@@ -400,7 +401,8 @@ def process_pilot_tone_signal(metadata, cfg, save_folder, coil_name, pt_sig, t_e
         pt_sig = np.squeeze(pt_sig - np.mean(pt_sig, axis=0, keepdims=True))
         pt_sig_filt = savgol_filter(pt_sig, cfg['pilottone']['golay_filter_len'], 3, axis=0)
         time_pt = np.arange(0, pt_sig.shape[0]) * dt_pt
-        save_path = os.path.join(save_folder, f"MID{int(metadata.measurementInformation.measurementID.split('_')[-1]):05d}_{metadata.measurementInformation.protocolName}_{datetime.now().strftime('%H%M%S')}")
+        recon_date = datetime.today().strftime('%Y-%m-%d')
+        save_path = os.path.join(save_folder, recon_date, f"MID{int(metadata.measurementInformation.measurementID.split('_')[-1]):05d}_{metadata.measurementInformation.protocolName}_{datetime.now().strftime('%H%M%S')}")
         logging.info(f"Saving pilot tone signal to {save_path}...")
         os.makedirs(save_path, exist_ok=True)
         if cfg['pilottone']['save_raw']:
