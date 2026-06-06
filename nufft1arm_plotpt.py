@@ -352,7 +352,7 @@ def process_pilot_tone_signal2(metadata, cfg, save_folder, coil_name, pt_sig, t_
                 r_idx, c_idx, confs = pick_navigators_from_sources(s_sobi, time_pt, classifier_path=None, force_navpred=True)
             elif len(r_idx) == 0:
                 logging.warning("Cardiac navigator is found, but no respiratory navigator is found at the first attempt. Returning the most likely respiratory navigator according to the classifier confidence...")
-                r_idx = np.argmax(confs[:,1])
+                r_idx = [np.argmax(confs[:,1])]
 
             pt_cardiac = filtfilt(h_cardiac, 1, s_sobi[c_idx[0], :], axis=0)
             pt_cardiac = check_waveform_polarity(pt_cardiac, method='width')*pt_cardiac
@@ -369,7 +369,7 @@ def process_pilot_tone_signal2(metadata, cfg, save_folder, coil_name, pt_sig, t_
             axs[1].plot(time_pt, pt_cardiac/np.max(pt_cardiac), label='Cardiac Pilot Tone')
             if len(ecg) > 0:
                 # time_ecg = np.arange(0, ecg.shape[0])*2.5e-3
-                axs[1].plot(t_ecg[ecg != 0], ecg[ecg != 0], label='ECG Signal', linestyle='', marker='d')
+                axs[1].plot(t_ecg[ecg > 0.9], ecg[ecg > 0.9], label='ECG Signal', linestyle='', marker='d')
             axs[1].legend()
             axs[1].set_title('Cardiac Signal')
             axs[1].set_xlabel('Time [s]')
@@ -383,7 +383,7 @@ def process_pilot_tone_signal2(metadata, cfg, save_folder, coil_name, pt_sig, t_
                 savemat(os.path.join(save_path, "pt_navs.mat"), {'respiratory': pt_respiratory, 'cardiac': pt_cardiac, 'dt': dt_pt})
             plt.close()
             if len(ecg):
-                report_str = report_jitter(time_pt, pt_cardiac, t_ecg, ecg, ecg_trigs=ecg)
+                report_str = report_jitter(time_pt, pt_cardiac, t_ecg, ecg, ecg_trigs=np.astype(ecg > 0.9, float))
                 logging.info("\n"+report_str)
                 with open(os.path.join(save_path, "jitter_report.txt"), 'w') as f:
                     f.write(report_str)
