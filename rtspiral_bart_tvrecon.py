@@ -7,26 +7,25 @@ import numpy as np
 import ctypes
 
 import mrdhelper
+import reconutils
 import time
 
-from scipy.io import loadmat
-
-import GIRF.GIRF as GIRF
-import rtoml
-
+DEBUG = True
 # Folder for debug output files
-debugFolder = "/tmp/share/debug"
+debugFolder = "debug_output"
 
 
 def process(connection, config, metadata):
-    logging.disable(logging.WARNING)
+    logging.disable(logging.DEBUG) # Disable debug logging for now, as it can be very verbose. Enable if needed.
     
-    logging.info("Config: \n%s", config)
-    logging.info("Metadata: \n%s", metadata)
+    logging.debug("Config: \n%s", config)
+    logging.debug("Metadata: \n%s", metadata)
 
     # Read config file and import BART
-    with open('configs/rtspiral_bart_tvrecon_config.toml') as jf:
-        cfg = rtoml.load(jf)
+    cfg = reconutils.load_config('rtspiral_bart_tvrecon_config.toml')
+    if cfg is None:
+        logging.error("Failed to load configuration. Exiting.")
+        return
 
     APPLY_GIRF = cfg['reconstruction']['apply_girf']
     gpu_device = cfg['reconstruction']['gpu_device']
@@ -34,8 +33,10 @@ def process(connection, config, metadata):
     n_arm_per_frame     = cfg['reconstruction']['arms_per_frame']
     n_recon_frames      = cfg['reconstruction']['num_recon_frames']
     n_chunks            = cfg['reconstruction']['num_chunks']
-    reg_lambda          = cfg['reconstruction']['reg_lambda']
+    reg_lambda_temporal = cfg['reconstruction']['reg_lambda_temporal']
+    reg_lambda_spatial  = cfg['reconstruction']['reg_lambda_spatial']
     max_iter            = cfg['reconstruction']['num_iter']
+    metafile_paths      = cfg.get('metafile_paths', ['seq_meta'])
 
     if n_recon_frames % n_chunks != 0:
         logging.error('Number of frames is not divisible by number of chunks. Check and correct the config.')
@@ -50,11 +51,10 @@ def process(connection, config, metadata):
     os.environ['CUDA_VISIBLE_DEVICES'] = str(gpu_device)
 
     # start = time.perf_counter()
-    # get the k-space trajectory based on the metadata hash.
-    traj_name = metadata.userParameters.userParameterString[1].value
-
-    # load the .mat file containing the trajectory
-    traj = loadmat("seq_meta/" + traj_name)
+    traj = reconutils.load_trajectory(metadata, metafile_paths)
+    if traj is None:
+        logging.error("Failed to load trajectory.")
+        return
 
     n_unique_angles = traj['param']['repetitions'][0,0][0,0]
 
@@ -72,15 +72,9 @@ def process(connection, config, metadata):
         except KeyError:
             dt = 1e-6 # [s]
 
-        patient_position = metadata.measurementInformation.patientPosition.value
-        r_PCS2DCS = GIRF.calculate_matrix_pcs_to_dcs(patient_position)
-
         gx = 1e3*np.concatenate((np.zeros((1, kx.shape[1])), np.diff(kx, axis=0)))/dt/42.58e6
         gy = 1e3*np.concatenate((np.zeros((1, kx.shape[1])), np.diff(ky, axis=0)))/dt/42.58e6
         g_nom = np.stack((gx, -gy), axis=2)
-
-        sR = {'T': 0.55}
-        tRR = 3e-6/dt
 
 
     ktraj = np.stack((kx, -ky), axis=2)
@@ -122,21 +116,11 @@ def process(connection, config, metadata):
         if type(arm) is ismrmrd.Acquisition:
 
             # First arm came, if GIRF is requested, correct trajectories and reupload.
-            if (arm.idx.kspace_encode_step_1 == 0) and APPLY_GIRF:
-                r_GCS2RCS = np.array(  [[0,    1,   0],  # [PE]   [0 1 0] * [r]
-                                        [1,    0,   0],  # [RO] = [1 0 0] * [c]
-                                        [0,    0,   1]]) # [SL]   [0 0 1] * [s]
-                r_GCS2PCS = np.array([arm.phase_dir, -np.array(arm.read_dir), arm.slice_dir])
-                r_GCS2DCS = r_PCS2DCS.dot(r_GCS2PCS)
-                sR['R'] = r_GCS2DCS.dot(r_GCS2RCS)
-                k_pred, _ = GIRF.apply_GIRF(g_nom, dt, sR, tRR)
-                # k_pred = np.flip(k_pred[:,:,0:2], axis=2) # Drop the z
-                k_pred = k_pred[:,:,0:2] # Drop the z
-
-                kmax = np.max(np.abs(k_pred[:,:,0] + 1j * k_pred[:,:,1]))
-                k_pred = np.swapaxes(k_pred, 0, 1)
-                k_pred = 0.5 * (k_pred / kmax) * msize
-                ktraj = k_pred
+            if (arm.scan_counter == 1) and APPLY_GIRF:
+                ktraj = reconutils.girf_calibration(g_nom,
+                    metadata.measurementInformation.patientPosition.value, arm, dt, msize,
+                    girf_file=cfg.get('girf_file'),
+                )
                 
                 if (arm.data.shape[1]-pre_discard/2) == w.shape[1]/2:
                     # Check if the OS is removed. Should only happen with offline recon.
@@ -144,7 +128,7 @@ def process(connection, config, metadata):
                     w = w[:,::2]
                     pre_discard = int(pre_discard//2)
                 
-            if (arm.idx.kspace_encode_step_1 == 0):
+            if (arm.scan_counter == 1):
                 grp = arm
 
 
@@ -163,13 +147,15 @@ def process(connection, config, metadata):
     end_acq = time.time()
     print(f'Acquiring the data took {end_acq-start_acq} secs.')
 
-    data = np.array(data)
+    data = np.array(data)*1e3
     data = np.transpose(data, axes=(1, 2, 0))
     coord = np.array(coord, dtype=np.float32)
     coord = np.transpose(coord, axes=(1, 0, 2))
 
     nc = data.shape[0]
     nk = data.shape[1]
+
+    n_recon_frames = min(n_recon_frames, data.shape[2]//n_arm_per_frame)
 
     kdata = np.transpose(data[:,:,:n_recon_frames*n_arm_per_frame], (2, 0, 1))
     kdata = kdata.reshape(n_recon_frames, n_arm_per_frame, nc, nk)            # [n_recon_frames, n_arms, n_ch, n_samples]
@@ -184,8 +170,8 @@ def process(connection, config, metadata):
     traj_all = np.reshape(kloc, (3, nk, -1))
     kloc = kloc[:,:,:,None,None,None,None,None,None,None,:]
 
-    print('kdata array shape: {}'.format(kdata.shape))
-    print('kloc array shape: {}'.format(kloc.shape))
+    logging.info('kdata array shape: {}'.format(kdata.shape))
+    logging.info('kloc array shape: {}'.format(kloc.shape))
 
 
     #       0           1           2           3           4           5
@@ -211,6 +197,9 @@ def process(connection, config, metadata):
     # sens = centeredCrop(sens, [Nx/2, Ny/2, 0]);
     sens_map = bart.bart(1, 'normalize 8', sens)
     # sens = sens/vecnorm(sens,2,4)
+    if DEBUG:
+        os.makedirs(debugFolder, exist_ok=True)
+        np.save(os.path.join(debugFolder, 'sens_map.npy'), sens_map)
 
     # Estimate data scaling outside of the bart for:
     # 1) We can exclude first 5 frames, they seem to dominate the scaling due to steady-state artifacts.
@@ -226,6 +215,7 @@ def process(connection, config, metadata):
     start_time_stamp = grp.getHead().acquisition_time_stamp
     frame_idx = 0
     for chunk_i in range(n_chunks):
+        logging.info(f'Starting reconstruction of chunk {chunk_i+1}/{n_chunks} with frames {chunk_i*n_frame_per_chunk} to {(chunk_i+1)*n_frame_per_chunk-1}.')
         
         if n_chunks == 1: # No chunking, so no overlap.
             slc = np.arange(chunk_i*n_frame_per_chunk, (chunk_i+1)*n_frame_per_chunk)
@@ -236,10 +226,21 @@ def process(connection, config, metadata):
         else: # Mid chunks
             slc = np.arange(chunk_i*n_frame_per_chunk-3, (chunk_i+1)*n_frame_per_chunk+3)
 
-        img = bart.bart(1, f'pics -g -m -w {inv_scl} -e -S -R T:1024:1024:{reg_lambda*n_frame_per_chunk} -d 4 -i {max_iter} -t', 
-                        kloc[:,:,:,:,:,:,:,:,:,:,slc], 
-                        kdata[:,:,:,:,:,:,:,:,:,:,slc], 
-                        sens_map)
+        if reg_lambda_spatial > 0:
+            img = bart.bart(1, f'pics -g -m -w {inv_scl} -e -S \
+                            -R T:1024:1024:{reg_lambda_temporal*n_frame_per_chunk} \
+                            -R W:3:0:{reg_lambda_spatial} \
+                            -d 4 -i {max_iter} -t', 
+                            kloc[:,:,:,:,:,:,:,:,:,:,slc], 
+                            kdata[:,:,:,:,:,:,:,:,:,:,slc], 
+                            sens_map)
+        else: # go for TFD only
+            img = bart.bart(1, f'pics -g -m -w {inv_scl} -e -S \
+                            -R T:1024:1024:{reg_lambda_temporal*n_frame_per_chunk} \
+                            -d 4 -i {max_iter} -t', 
+                            kloc[:,:,:,:,:,:,:,:,:,:,slc], 
+                            kdata[:,:,:,:,:,:,:,:,:,:,slc], 
+                            sens_map)
 
         img = np.squeeze(img)
 
@@ -266,7 +267,7 @@ def process(connection, config, metadata):
 
     connection.send_close()
     os.environ.pop('CUDA_VISIBLE_DEVICES', None)
-    print('Reconstruction is finished.')
+    logging.info('Reconstruction is finished.')
 
 def estimate_scale_bart(bart, traj, ksp, sens_map) -> float:
     ''' Estimates inverse scaling of the data as BART does. 
@@ -349,6 +350,7 @@ def process_group(group, data, rep, config, metadata):
                          'WindowCenter':           str((maxVal+1)/2),
                          'WindowWidth':            str((maxVal+1))})
 
+    # TODO: Add recon parameters to MetaAttributes for record keeping.
     # Add image orientation directions to MetaAttributes if not already present
     if meta.get('ImageRowDir') is None:
         meta['ImageRowDir'] = ["{:.18f}".format(image.getHead().read_dir[0]), "{:.18f}".format(image.getHead().read_dir[1]), "{:.18f}".format(image.getHead().read_dir[2])]
