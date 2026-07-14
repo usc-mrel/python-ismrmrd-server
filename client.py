@@ -27,10 +27,12 @@ defaults = {
     'ignore_json_config': False,
     'send_waveforms':     False,
     'verbose':            False,
-    'logfile':            ''
+    'logfile':            '',
+    'quiet':              False,
+    'mrd2gif':            False
 }
 
-def connection_receive_loop(sock, outfile, outgroup, verbose, logfile, recvAcqs, recvImages, recvWaveforms):
+def connection_receive_loop(sock, outfile, outgroup, verbose, logfile, quiet, recvAcqs, recvImages, recvWaveforms):
     """Start a Connection instance to receive data, generally run in a separate thread"""
 
     if verbose:
@@ -40,7 +42,8 @@ def connection_receive_loop(sock, outfile, outgroup, verbose, logfile, recvAcqs,
 
     if logfile:
         logging.basicConfig(filename=logfile, format='%(asctime)s - %(message)s', level=verbosity)
-        logging.getLogger().addHandler(logging.StreamHandler(sys.stdout))
+        if not quiet:
+            logging.getLogger().addHandler(logging.StreamHandler(sys.stdout))
     else:
         logging.basicConfig(format='%(asctime)s - %(message)s', level=verbosity)
 
@@ -69,6 +72,31 @@ def connection_receive_loop(sock, outfile, outgroup, verbose, logfile, recvAcqs,
     recvWaveforms.value = incoming_connection.recvWaveforms
 
 def main(args):
+    # ----- Set up logging ---------------------------------------------
+    if args.logfile:
+        print("Logging to file: ", args.logfile)
+        logging.basicConfig(filename=args.logfile, format='%(asctime)s - %(message)s', level=logging.WARNING)
+        if not args.quiet:
+            logging.getLogger().addHandler(logging.StreamHandler(sys.stdout))
+    else:
+        print("No logfile provided")
+        logging.basicConfig(format='%(asctime)s - %(message)s', level=logging.WARNING)
+
+    if args.verbose:
+        logging.root.setLevel(logging.DEBUG)
+    else:
+        logging.root.setLevel(logging.INFO)
+
+    # Use an output filename based on the input file if not provided
+    if args.outfile is None:
+        base, ext = os.path.splitext(args.filename)
+        args.outfile = base + '_results' + ext
+        logging.info("Output file not specified -- writing results to %s", args.outfile)
+
+    # If a config is specified via the command line arguments, then set ignore_json_config to True
+    if ('-c' in sys.argv) or ('--config' in sys.argv):
+        args.ignore_json_config = True
+
     # ----- Load and validate file ---------------------------------------------
     if (args.config_local):
         if not os.path.exists(args.config_local):
@@ -91,7 +119,7 @@ def main(args):
             return
         dsetNames = dset.keys()
         logging.info("File %s contains %d groups:", args.filename, len(dset.keys()))
-        print(" ", "\n  ".join(dsetNames))
+        logging.info("\n  ".join(dsetNames))
 
         if not args.in_group:
             if len(dset.keys()) == 1:
@@ -128,7 +156,7 @@ def main(args):
 
         if ('data' in group):
             hasRaw = True
-        
+
         if len([key for key in group.keys() if (key.startswith('image_') or key.startswith('images_'))]) > 0:
             hasImage = True
 
@@ -166,7 +194,7 @@ def main(args):
     recvAcqs      = multiprocessing.Value('i', 0)
     recvImages    = multiprocessing.Value('i', 0)
     recvWaveforms = multiprocessing.Value('i', 0)
-    process = multiprocessing.Process(target=connection_receive_loop, args=(sock, args.outfile, args.out_group, args.verbose, args.logfile, recvAcqs, recvImages, recvWaveforms))
+    process = multiprocessing.Process(target=connection_receive_loop, args=(sock, args.outfile, args.out_group, args.verbose, args.logfile, args.quiet, recvAcqs, recvImages, recvWaveforms))
     process.daemon = True
     process.start()
 
@@ -185,6 +213,10 @@ def main(args):
     else:
         logging.info("Sending remote config file name '%s'", args.config)
         connection.send_config_file(args.config)
+
+    # Ensure ismrmrd package has a context manager
+    if not (hasattr(ismrmrd.Dataset, '__enter__') and hasattr(ismrmrd.Dataset, '__exit__')):
+        raise Exception("Current ismrmrd Python package does not support context manager as required by this code.  Please update to 1.14.1 or newer")
 
     with ismrmrd.Dataset(args.filename, args.in_group, create_if_needed=False) as dset:
         # --------------- Send MRD metadata -----------------------
@@ -320,6 +352,21 @@ def main(args):
     logging.info("Results written to %s", args.outfile)
     logging.info("Session complete")
 
+    if args.mrd2gif:
+        try:
+            import mrd2gif
+            from types import SimpleNamespace
+
+            mrd2gifargs = SimpleNamespace(**mrd2gif.defaults)
+            mrd2gifargs.filename = args.outfile
+            mrd2gifargs.in_group = args.out_group
+            mrd2gifargs.quiet    = args.quiet
+
+            logging.info('Calling mrd2gif...')
+            mrd2gif.main(mrd2gifargs)
+        except:
+            logging.error('Failed to import or call mrd2gif')
+
     return
 
 if __name__ == '__main__':
@@ -337,32 +384,12 @@ if __name__ == '__main__':
     parser.add_argument('-w', '--send-waveforms',     action='store_true', help='Send waveform (physio) data')
     parser.add_argument('-v', '--verbose',            action='store_true', help='Verbose mode')
     parser.add_argument('-l', '--logfile',            type=str,            help='Path to log file')
+    parser.add_argument('-q', '--quiet',              action='store_true', help='Suppress stdout logging')
     parser.add_argument(      '--ignore-json-config', action='store_true', help='Ignore config specified in JSON')
+    parser.add_argument(      '--mrd2gif',            action='store_true', help='Run mrd2gif on output file')
 
     parser.set_defaults(**defaults)
 
     args = parser.parse_args()
-
-    if args.logfile:
-        print("Logging to file: ", args.logfile)
-        logging.basicConfig(filename=args.logfile, format='%(asctime)s - %(message)s', level=logging.WARNING)
-        logging.getLogger().addHandler(logging.StreamHandler(sys.stdout))
-    else:
-        print("No logfile provided")
-        logging.basicConfig(format='%(asctime)s - %(message)s', level=logging.WARNING)
-
-    if args.verbose:
-        logging.root.setLevel(logging.DEBUG)
-    else:
-        logging.root.setLevel(logging.INFO)
-
-    if args.outfile is None:
-        base, ext = os.path.splitext(args.filename)
-        args.outfile = base + '_results' + ext
-        logging.info("Output file not specified -- writing results to %s", args.outfile)
-
-    # If a config is specified via the command line arguments, then set ignore_json_config to True
-    if ('-c' in sys.argv) or ('--config' in sys.argv):
-        args.ignore_json_config = True
 
     main(args)
